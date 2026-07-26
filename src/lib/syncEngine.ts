@@ -2,6 +2,35 @@ import { supabase } from './supabase';
 import { localDB } from './db';
 
 // ============================================================
+// CASE CONVERSION HELPERS (CAMELCASE JS <-> SNAKE_CASE POSTGRES)
+// ============================================================
+export function toSnakeCase(obj: any): any {
+  if (Array.isArray(obj)) return obj.map(toSnakeCase);
+  if (obj !== null && typeof obj === 'object' && !(obj instanceof Date)) {
+    const n: Record<string, any> = {};
+    for (const key of Object.keys(obj)) {
+      const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+      n[snakeKey] = toSnakeCase(obj[key]);
+    }
+    return n;
+  }
+  return obj;
+}
+
+export function toCamelCase(obj: any): any {
+  if (Array.isArray(obj)) return obj.map(toCamelCase);
+  if (obj !== null && typeof obj === 'object' && !(obj instanceof Date)) {
+    const n: Record<string, any> = {};
+    for (const key of Object.keys(obj)) {
+      const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+      n[camelKey] = toCamelCase(obj[key]);
+    }
+    return n;
+  }
+  return obj;
+}
+
+// ============================================================
 // SECTION 1: ONLINE STATUS
 // ============================================================
 export const isOnline = (): boolean => {
@@ -22,7 +51,6 @@ export interface SyncConflict {
   detectedAt: string;
 }
 
-// In-memory store for conflicts detected during sync (shown to admin on login)
 let pendingConflicts: SyncConflict[] = [];
 
 export const getAndClearConflicts = (): SyncConflict[] => {
@@ -34,7 +62,7 @@ export const getAndClearConflicts = (): SyncConflict[] => {
 export const hasPendingConflicts = (): boolean => pendingConflicts.length > 0;
 
 // ============================================================
-// SECTION 3: SAFE PULL FROM SUPABASE (NEVER WIPE LOCAL IF SUPABASE EMPTY)
+// SECTION 3: SAFE PULL FROM SUPABASE (ONLINE FIRST -> LOCAL CACHE)
 // ============================================================
 export async function syncTableFromSupabase<T extends { id: string }>(
   tableName: string,
@@ -47,16 +75,21 @@ export async function syncTableFromSupabase<T extends { id: string }>(
       const { data, error } = await supabase.from(tableName).select('*');
       if (!error && data && Array.isArray(data)) {
         if (data.length > 0) {
-          // Supabase has records → sync into local
+          const camelData = toCamelCase(data);
           await dexieTable.clear();
-          await dexieTable.bulkPut(data);
-          return data as T[];
+          await dexieTable.bulkPut(camelData);
+          return camelData as T[];
         } else if (localItems.length > 0) {
-          // Supabase empty but local has data → upload local to Supabase
           console.log(`[SyncEngine] Supabase '${tableName}' empty. Uploading ${localItems.length} local records...`);
-          await supabase.from(tableName).insert(localItems);
+          const snakeLocalItems = toSnakeCase(localItems);
+          const { error: insertErr } = await supabase.from(tableName).insert(snakeLocalItems);
+          if (insertErr) {
+            console.error(`[SyncEngine] Upload error for ${tableName}:`, insertErr);
+          }
           return localItems as T[];
         }
+      } else if (error) {
+        console.error(`[SyncEngine] Select error for ${tableName}:`, error);
       }
     }
   } catch (err) {
@@ -67,7 +100,7 @@ export async function syncTableFromSupabase<T extends { id: string }>(
 }
 
 // ============================================================
-// SECTION 4: SAFE PUSH TO SUPABASE (QUEUE WHEN OFFLINE)
+// SECTION 4: SAFE PUSH TO SUPABASE (ONLINE -> IMMEDIATE, OFFLINE -> QUEUE)
 // ============================================================
 export async function syncPushToSupabase(
   tableName: string,
@@ -76,22 +109,35 @@ export async function syncPushToSupabase(
 ): Promise<boolean> {
   try {
     if (isOnline()) {
+      const snakeData = toSnakeCase(data);
       if (action === 'INSERT') {
-        const { error } = await supabase.from(tableName).insert([data]);
-        if (!error) return true;
+        const { error } = await supabase.from(tableName).insert([snakeData]);
+        if (!error) {
+          console.log(`[SyncEngine] ✅ Successfully pushed INSERT to Supabase table '${tableName}'`);
+          return true;
+        }
+        console.error(`[SyncEngine] Insert error on ${tableName}:`, error);
       } else if (action === 'UPDATE') {
-        const { error } = await supabase.from(tableName).update(data).eq('id', data.id);
-        if (!error) return true;
+        const { error } = await supabase.from(tableName).update(snakeData).eq('id', data.id);
+        if (!error) {
+          console.log(`[SyncEngine] ✅ Successfully pushed UPDATE to Supabase table '${tableName}'`);
+          return true;
+        }
+        console.error(`[SyncEngine] Update error on ${tableName}:`, error);
       } else if (action === 'DELETE') {
         const { error } = await supabase.from(tableName).delete().eq('id', data.id);
-        if (!error) return true;
+        if (!error) {
+          console.log(`[SyncEngine] ✅ Successfully pushed DELETE to Supabase table '${tableName}'`);
+          return true;
+        }
+        console.error(`[SyncEngine] Delete error on ${tableName}:`, error);
       }
     }
   } catch (err) {
     console.warn(`[SyncEngine] Push failed for ${tableName}, queuing offline:`, err);
   }
 
-  // Offline → queue in Dexie pending sync table
+  // If offline or push errored, queue in Dexie pending sync table
   await localDB.pendingSync.add({
     table: tableName,
     action,
@@ -118,22 +164,25 @@ export async function processPendingOfflineSync(): Promise<{ synced: number; con
 
   for (const item of pendingList) {
     try {
+      const snakeData = toSnakeCase(item.data);
+
       if (item.action === 'INSERT') {
-        // Check if already exists (another device may have inserted same-id record)
         const { data: existing } = await supabase.from(item.table).select('id').eq('id', item.data.id).single();
         if (existing) {
-          // Already there (duplicate offline insert), skip
           if (item.id) await localDB.pendingSync.delete(item.id);
           syncedCount++;
           continue;
         }
-        await supabase.from(item.table).insert([item.data]);
-
+        const { error } = await supabase.from(item.table).insert([snakeData]);
+        if (error) {
+          console.error(`[SyncEngine] Failed queued insert into ${item.table}:`, error);
+          continue;
+        }
       } else if (item.action === 'UPDATE') {
-        // CONFLICT DETECTION: compare critical numeric fields with remote
-        const { data: remoteRecord } = await supabase.from(item.table).select('*').eq('id', item.data.id).single();
+        const { data: remoteRaw } = await supabase.from(item.table).select('*').eq('id', item.data.id).single();
 
-        if (remoteRecord) {
+        if (remoteRaw) {
+          const remoteRecord = toCamelCase(remoteRaw);
           const inventoryConflictFields = ['stockQuantity', 'currentBalance'];
 
           for (const field of inventoryConflictFields) {
@@ -145,9 +194,7 @@ export async function processPendingOfflineSync(): Promise<{ synced: number; con
               const localVal = item.data[field] as number;
               const remoteVal = remoteRecord[field] as number;
 
-              // If both sides changed (remote was modified by another device offline too)
               if (Math.abs(localVal - remoteVal) > 0) {
-                // Resolution strategy: take the LOWER value (conservative - prevents phantom stock)
                 const resolvedVal = Math.min(localVal, remoteVal);
 
                 const conflict: SyncConflict = {
@@ -168,14 +215,26 @@ export async function processPendingOfflineSync(): Promise<{ synced: number; con
             }
           }
 
-          await supabase.from(item.table).update(item.data).eq('id', item.data.id);
+          const updatedSnakeData = toSnakeCase(item.data);
+          const { error } = await supabase.from(item.table).update(updatedSnakeData).eq('id', item.data.id);
+          if (error) {
+            console.error(`[SyncEngine] Failed queued update for ${item.table}:`, error);
+            continue;
+          }
         } else {
-          // Remote record deleted, re-insert
-          await supabase.from(item.table).insert([item.data]);
+          const { error } = await supabase.from(item.table).insert([snakeData]);
+          if (error) {
+            console.error(`[SyncEngine] Failed queued re-insert for ${item.table}:`, error);
+            continue;
+          }
         }
 
       } else if (item.action === 'DELETE') {
-        await supabase.from(item.table).delete().eq('id', item.data.id);
+        const { error } = await supabase.from(item.table).delete().eq('id', item.data.id);
+        if (error) {
+          console.error(`[SyncEngine] Failed queued delete for ${item.table}:`, error);
+          continue;
+        }
       }
 
       if (item.id) await localDB.pendingSync.delete(item.id);

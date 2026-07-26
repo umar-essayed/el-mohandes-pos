@@ -1,35 +1,43 @@
 -- =========================================================
 -- SCHEMAS & TABLES FOR "EL-MOHANDES" STORE MANAGEMENT SYSTEM
 -- Run this script in Supabase SQL Editor
+-- (Fixes UUID vs String ID mismatch and adds snake_case schema)
 -- =========================================================
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Drop existing tables if they were created with UUID PKs to recreate with TEXT PKs
+DROP TABLE IF EXISTS credit_payments CASCADE;
+DROP TABLE IF EXISTS credit_customers CASCADE;
+DROP TABLE IF EXISTS shifts CASCADE;
+DROP TABLE IF EXISTS suppliers CASCADE;
+DROP TABLE IF EXISTS expenses CASCADE;
+DROP TABLE IF EXISTS maintenance_jobs CASCADE;
+DROP TABLE IF EXISTS invoices CASCADE;
+DROP TABLE IF EXISTS wallet_transactions CASCADE;
+DROP TABLE IF EXISTS wallets CASCADE;
+DROP TABLE IF EXISTS inventory CASCADE;
+DROP TABLE IF EXISTS phones CASCADE;
+DROP TABLE IF EXISTS store_users CASCADE;
 
 -- 1. Users & Roles Table
-CREATE TABLE IF NOT EXISTS store_users (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE store_users (
+  id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
+  password_hash TEXT,
   role TEXT NOT NULL CHECK (role IN ('ADMIN', 'CASHIER')),
   pin_code TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Default Admin User (Password: admin123, PIN: 1234)
-INSERT INTO store_users (name, email, password_hash, role, pin_code)
-VALUES ('الأستاذ المهندس (المدير العام)', 'admin@elmohandes.com', 'admin123', 'ADMIN', '1234')
-ON CONFLICT (email) DO NOTHING;
-
--- Default Cashier User (Password: cashier123, PIN: 0000)
-INSERT INTO store_users (name, email, password_hash, role, pin_code)
-VALUES ('علي الكاشير', 'cashier@elmohandes.com', 'cashier123', 'CASHIER', '0000')
-ON CONFLICT (email) DO NOTHING;
+-- Default Users
+INSERT INTO store_users (id, name, email, password_hash, role, pin_code)
+VALUES ('usr-admin', 'الأستاذ المهندس (المدير العام)', 'admin@elmohandes.com', 'admin123', 'ADMIN', '1234'),
+       ('usr-cashier', 'علي الكاشير', 'cashier@elmohandes.com', 'cashier123', 'CASHIER', '0000')
+ON CONFLICT (id) DO NOTHING;
 
 -- 2. Phones Management Table
-CREATE TABLE IF NOT EXISTS phones (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE phones (
+  id TEXT PRIMARY KEY,
   brand TEXT NOT NULL,
   model TEXT NOT NULL,
   color TEXT,
@@ -49,10 +57,10 @@ CREATE TABLE IF NOT EXISTS phones (
 );
 
 -- 3. Accessories & Inventory Table
-CREATE TABLE IF NOT EXISTS inventory (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE inventory (
+  id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  barcode TEXT UNIQUE NOT NULL,
+  barcode TEXT,
   category TEXT NOT NULL,
   cost_price NUMERIC NOT NULL,
   sell_price NUMERIC NOT NULL,
@@ -63,20 +71,24 @@ CREATE TABLE IF NOT EXISTS inventory (
 );
 
 -- 4. Digital Wallets Table
-CREATE TABLE IF NOT EXISTS wallets (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE wallets (
+  id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   provider TEXT NOT NULL,
   phone_number TEXT NOT NULL,
   current_balance NUMERIC NOT NULL DEFAULT 0,
   color TEXT DEFAULT '#10b981',
+  daily_limit NUMERIC,
+  monthly_limit NUMERIC,
+  send_commission_per_thousand NUMERIC,
+  receive_commission_per_thousand NUMERIC,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 5. Wallet Transactions Ledger
-CREATE TABLE IF NOT EXISTS wallet_transactions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  wallet_id UUID REFERENCES wallets(id) ON DELETE CASCADE,
+CREATE TABLE wallet_transactions (
+  id TEXT PRIMARY KEY,
+  wallet_id TEXT REFERENCES wallets(id) ON DELETE SET NULL,
   wallet_name TEXT NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('SEND', 'RECEIVE', 'AIRTIME_TOPUP')),
   amount NUMERIC NOT NULL,
@@ -90,9 +102,9 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
 );
 
 -- 6. Invoices Table
-CREATE TABLE IF NOT EXISTS invoices (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  invoice_number TEXT UNIQUE NOT NULL,
+CREATE TABLE invoices (
+  id TEXT PRIMARY KEY,
+  invoice_number TEXT NOT NULL,
   date TIMESTAMPTZ DEFAULT NOW(),
   customer_name TEXT DEFAULT 'زبون عام',
   customer_phone TEXT,
@@ -101,15 +113,24 @@ CREATE TABLE IF NOT EXISTS invoices (
   subtotal NUMERIC NOT NULL,
   discount NUMERIC DEFAULT 0,
   total_amount NUMERIC NOT NULL,
+  payment_method TEXT,
   payment_split JSONB NOT NULL,
   cashier_name TEXT NOT NULL,
+  is_returned BOOLEAN DEFAULT FALSE,
+  return_status TEXT,
+  returned_amount NUMERIC,
+  returned_date TIMESTAMPTZ,
+  credit_customer_id TEXT,
+  credit_customer_name TEXT,
+  is_paid BOOLEAN,
+  paid_date TIMESTAMPTZ,
   notes TEXT
 );
 
 -- 7. Maintenance Jobs Table
-CREATE TABLE IF NOT EXISTS maintenance_jobs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  ticket_number TEXT UNIQUE NOT NULL,
+CREATE TABLE maintenance_jobs (
+  id TEXT PRIMARY KEY,
+  ticket_number TEXT NOT NULL,
   customer_name TEXT NOT NULL,
   customer_phone TEXT NOT NULL,
   device_model TEXT NOT NULL,
@@ -119,7 +140,7 @@ CREATE TABLE IF NOT EXISTS maintenance_jobs (
   deposit_paid NUMERIC DEFAULT 0,
   estimated_cost NUMERIC DEFAULT 0,
   final_cost NUMERIC,
-  status TEXT NOT NULL DEFAULT 'INSPECTION' CHECK (status IN ('INSPECTION', 'REPAIRING', 'READY', 'DELIVERED')),
+  status TEXT NOT NULL DEFAULT 'RECEIVED',
   used_spare_parts JSONB DEFAULT '[]'::jsonb,
   received_date TIMESTAMPTZ DEFAULT NOW(),
   delivered_date TIMESTAMPTZ,
@@ -128,8 +149,8 @@ CREATE TABLE IF NOT EXISTS maintenance_jobs (
 );
 
 -- 8. Expenses Table
-CREATE TABLE IF NOT EXISTS expenses (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE expenses (
+  id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   category TEXT NOT NULL,
   amount NUMERIC NOT NULL,
@@ -139,33 +160,64 @@ CREATE TABLE IF NOT EXISTS expenses (
 );
 
 -- 9. Supplier Accounts Table
-CREATE TABLE IF NOT EXISTS suppliers (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE suppliers (
+  id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   company_name TEXT NOT NULL,
   phone TEXT NOT NULL,
+  address TEXT,
   total_purchases NUMERIC DEFAULT 0,
-  paid_amount NUMERIC DEFAULT 0,
+  total_paid NUMERIC DEFAULT 0,
   remaining_debt NUMERIC DEFAULT 0,
   notes TEXT
 );
 
 -- 10. Shifts Table
-CREATE TABLE IF NOT EXISTS shifts (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE shifts (
+  id TEXT PRIMARY KEY,
   shift_number INT NOT NULL,
   cashier_name TEXT NOT NULL,
+  cashier_id TEXT,
   start_time TIMESTAMPTZ DEFAULT NOW(),
   end_time TIMESTAMPTZ,
   initial_drawer_cash NUMERIC NOT NULL,
   expected_drawer_cash NUMERIC NOT NULL,
   actual_drawer_cash NUMERIC,
   cash_difference NUMERIC,
-  status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED')),
+  total_sales NUMERIC,
+  total_invoices NUMERIC,
+  total_wallet_commissions NUMERIC,
+  status TEXT NOT NULL DEFAULT 'OPEN',
   notes TEXT
 );
 
--- Enable RLS & Policies (Public access for shop demo API)
+-- 11. Credit Customers (حسابات العملاء بالآجل)
+CREATE TABLE credit_customers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  address TEXT,
+  national_id TEXT,
+  total_debt NUMERIC DEFAULT 0,
+  total_paid NUMERIC DEFAULT 0,
+  remaining_debt NUMERIC DEFAULT 0,
+  credit_limit NUMERIC DEFAULT 10000,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  last_transaction_date TIMESTAMPTZ
+);
+
+-- 12. Credit Payments (سدادات الديون)
+CREATE TABLE credit_payments (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT REFERENCES credit_customers(id) ON DELETE CASCADE,
+  amount NUMERIC NOT NULL,
+  date TIMESTAMPTZ DEFAULT NOW(),
+  notes TEXT,
+  cashier_name TEXT
+);
+
+-- Enable RLS & Public Policies
 ALTER TABLE store_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE phones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
@@ -176,6 +228,8 @@ ALTER TABLE maintenance_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shifts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credit_customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credit_payments ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public all on store_users" ON store_users FOR ALL USING (true);
 CREATE POLICY "Allow public all on phones" ON phones FOR ALL USING (true);
@@ -187,3 +241,5 @@ CREATE POLICY "Allow public all on maintenance_jobs" ON maintenance_jobs FOR ALL
 CREATE POLICY "Allow public all on expenses" ON expenses FOR ALL USING (true);
 CREATE POLICY "Allow public all on suppliers" ON suppliers FOR ALL USING (true);
 CREATE POLICY "Allow public all on shifts" ON shifts FOR ALL USING (true);
+CREATE POLICY "Allow public all on credit_customers" ON credit_customers FOR ALL USING (true);
+CREATE POLICY "Allow public all on credit_payments" ON credit_payments FOR ALL USING (true);
