@@ -1,0 +1,29 @@
+{
+  "name": "محل المهندس - نظام الكاشير",
+  "short_name": "المهندس POS",
+  "description": "نظام إدارة مبيعات وتلفونات وإكسسوارات وفودافون كاش - محل المهندس للاتصالات والتكنولوجيا",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#f59e0b",
+  "orientation": "portrait-primary",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": ["business", "utilities"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
+}
