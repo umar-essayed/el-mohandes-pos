@@ -18,6 +18,7 @@ import { PrintablesModal } from './components/Printables/PrintablesModal';
 import { SyncConflictsModal } from './components/Sync/SyncConflictsModal';
 import { CreditCustomersView } from './components/CreditCustomers/CreditCustomersView';
 import { ShiftCloseModal } from './components/Shift/ShiftCloseModal';
+import { BarcodeDesignerModal } from './components/Barcode/BarcodeDesignerModal';
 import './styles/theme.css';
 
 const MainLayout: React.FC = () => {
@@ -25,6 +26,7 @@ const MainLayout: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('pos');
   const [posInitialImei, setPosInitialImei] = useState<string | undefined>(undefined);
   const [showShiftClose, setShowShiftClose] = useState(false);
+  const [showBarcodeDesigner, setShowBarcodeDesigner] = useState(false);
 
   if (!isAuthenticated || !currentUser) {
     return <LoginPage onLoginSuccess={() => setActiveTab('pos')} />;
@@ -42,7 +44,11 @@ const MainLayout: React.FC = () => {
         activeTab={activeTab}
         setActiveTab={(tab) => {
           setPosInitialImei(undefined);
-          setActiveTab(tab);
+          if (tab === 'barcode') {
+            setShowBarcodeDesigner(true);
+          } else {
+            setActiveTab(tab);
+          }
         }}
         userRole={currentUser.role}
       />
@@ -70,13 +76,26 @@ const MainLayout: React.FC = () => {
         activeTab={activeTab}
         setActiveTab={(tab) => {
           setPosInitialImei(undefined);
-          setActiveTab(tab);
+          if (tab === 'barcode') {
+            setShowBarcodeDesigner(true);
+          } else {
+            setActiveTab(tab);
+          }
         }}
         userRole={currentUser.role}
       />
 
       {/* Global Printable Modal */}
       <PrintablesModal />
+
+      {/* Barcode Designer & TSPL Printing Engine Modal */}
+      <BarcodeDesignerModal
+        isOpen={showBarcodeDesigner || activeTab === 'barcode'}
+        onClose={() => {
+          setShowBarcodeDesigner(false);
+          if (activeTab === 'barcode') setActiveTab('pos');
+        }}
+      />
 
       {/* Admin Sync Conflict Notifications */}
       <SyncConflictsModal />

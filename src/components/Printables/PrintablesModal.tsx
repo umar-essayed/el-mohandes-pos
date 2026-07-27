@@ -191,7 +191,63 @@ export const PrintablesModal: React.FC = () => {
               </div>
             )}
 
-            {/* TYPE 3: MAINTENANCE RECEIPT */}
+            {/* TYPE 4: THERMAL BARCODE LABELS (42.5mm x 25.0mm) */}
+            {type === 'BARCODE_LABELS' && (
+              <div style={{ background: '#fff', color: '#000', padding: 0 }}>
+                {data.items.map((item: any) =>
+                  Array.from({ length: item.qty || 1 }).map((_, qIdx) => (
+                    <div
+                      key={`${item.id}-${qIdx}`}
+                      style={{
+                        width: `${data.config?.widthMm || 42.5}mm`,
+                        height: `${data.config?.heightMm || 25.0}mm`,
+                        pageBreakAfter: 'always',
+                        padding: '1mm',
+                        boxSizing: 'border-box',
+                        fontFamily: 'Cairo, sans-serif',
+                        fontSize: '9px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        textAlign: 'center',
+                        background: '#fff',
+                        color: '#000',
+                        margin: '0 auto 8px auto',
+                        border: '1px solid #ccc'
+                      }}
+                    >
+                      {data.config?.showStoreName && (
+                        <div style={{ fontSize: `${data.config?.storeFontSize || 10}px`, fontWeight: 'bold', lineHeight: 1 }}>
+                          {data.config?.customStoreName || item.storeName || storeSettings.storeName}
+                        </div>
+                      )}
+
+                      {data.config?.showProductName && (
+                        <div style={{ fontSize: `${data.config?.nameFontSize || 9}px`, fontWeight: 'bold', lineHeight: 1.1, overflow: 'hidden', height: '1.8em' }}>
+                          {item.title}
+                        </div>
+                      )}
+
+                      {data.config?.showBarcode && item.barcode && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          <img
+                            src={`https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(item.barcode)}&scale=2&height=12&includetext=${data.config?.showText ? 'true' : 'false'}`}
+                            alt={item.barcode}
+                            style={{ height: '16mm', maxWidth: '100%', objectFit: 'contain' }}
+                          />
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '0 2px', fontSize: '9px', fontWeight: 'bold' }}>
+                        {data.config?.showPrice && <span>ج.م {item.price}</span>}
+                        {data.config?.showOrigin && <span style={{ fontSize: '8px', color: '#555' }}>{data.config?.customOriginText || item.origin || 'صنع في مصر'}</span>}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
             {type === 'MAINTENANCE' && (
               <div className="thermal-receipt" style={{ width: '80mm' }}>
                 <div className="thermal-header">

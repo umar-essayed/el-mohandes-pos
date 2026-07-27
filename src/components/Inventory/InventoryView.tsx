@@ -79,9 +79,11 @@ export const InventoryView: React.FC = () => {
             متابعة مخزون الجرابات، الشواحن، الكابلات، الشاشات، وإشعارات النواقص
           </p>
         </div>
-        <button className="btn btn-emerald" onClick={() => setShowAddModal(true)}>
-          <Plus size={18} /> إضافة صنف إكسسوار جديد
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button className="btn btn-emerald" onClick={() => setShowAddModal(true)}>
+            <Plus size={18} /> إضافة صنف إكسسوار جديد
+          </button>
+        </div>
       </div>
 
       {/* Category Pills & Toolbar */}

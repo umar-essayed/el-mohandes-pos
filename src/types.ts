@@ -229,3 +229,56 @@ export interface CreditPayment {
   notes?: string;
   cashierName: string;
 }
+
+export interface BarcodeConfig {
+  widthMm: number;
+  heightMm: number;
+  gap: number;
+  marginTop: number;
+  marginBottom: number;
+  marginLeft: number;
+  marginRight: number;
+
+  storeX: number;
+  storeY: number;
+  storeFontSize: number;
+
+  nameX: number;
+  nameY: number;
+  nameFontSize: number;
+
+  barcodeX: number;
+  barcodeY: number;
+  scaleWidth: number;
+  scaleHeight: number;
+  showText: boolean;
+
+  priceX: number;
+  priceY: number;
+  priceFontSize: number;
+
+  originX: number;
+  originY: number;
+  originFontSize: number;
+
+  showStoreName: boolean;
+  showProductName: boolean;
+  showBarcode: boolean;
+  showPrice: boolean;
+  showOrigin: boolean;
+
+  customStoreName?: string;
+  customOriginText?: string;
+  dpi?: number;
+}
+
+export interface BarcodePrintItem {
+  id: string;
+  title: string;
+  barcode: string;
+  price: number;
+  origin?: string;
+  storeName?: string;
+  qty: number;
+}
+

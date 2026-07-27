@@ -9,7 +9,8 @@ import {
   BarChart3,
   Settings,
   FileText,
-  Users
+  Users,
+  Barcode
 } from 'lucide-react';
 
 export interface TabItem {
@@ -26,6 +27,7 @@ export const navItems: TabItem[] = [
   { id: 'dashboard', label: 'لوحة التحكم الرئيسية', icon: <LayoutDashboard size={20} /> },
   { id: 'phones', label: 'إدارة الأجهزة والتلفونات', icon: <Smartphone size={20} /> },
   { id: 'accessories', label: 'الإكسسوارات والمخزن', icon: <Headphones size={20} /> },
+  { id: 'barcode', label: 'مصمم ومحرك الباركود 🏷️', icon: <Barcode size={20} /> },
   { id: 'wallets', label: 'التحويلات والمحافظ', icon: <Send size={20} /> },
   { id: 'maintenance', label: 'قسم الصيانة', icon: <Wrench size={20} /> },
   { id: 'credit', label: 'حسابات الآجل 📋', icon: <Users size={20} /> },
