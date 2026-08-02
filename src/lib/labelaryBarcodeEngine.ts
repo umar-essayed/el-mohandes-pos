@@ -16,7 +16,14 @@ export interface LabelParams {
   originText?: string;
 }
 
-const LABELARY_BASE = 'https://api.labelary.com/v1/printers/8dpmm/labels/2x1';
+const LABELARY_API = 'https://api.labelary.com/v1/printers/8dpmm/labels';
+
+/** Build Labelary URL dynamically from mm dimensions */
+function labelaryUrl(widthMm: number, heightMm: number): string {
+  const w = (widthMm  / 25.4).toFixed(4);
+  const h = (heightMm / 25.4).toFixed(4);
+  return `${LABELARY_API}/${w}x${h}`;
+}
 const DPMM = 8; // dots per mm
 
 /** Convert mm → dots at 8dpmm */
@@ -122,8 +129,11 @@ export function generateZPLCode(params: LabelParams, config?: any): string {
     ? `EGP ${params.price}`
     : String(params.price || 'EGP 0');
 
-  // Canvas size in dots: 2×1 inch @ 8dpmm = 406×203
-  const W = 406;
+  // Actual label dimensions from config (mm → dots at 8dpmm)
+  const widthMm  = config?.widthMm  ?? 50.8; // default 2 inch
+  const heightMm = config?.heightMm ?? 25.4; // default 1 inch
+  const W = mm2d(widthMm);
+  const H = mm2d(heightMm);
 
   // ── Text positions: config values are in mm → convert to 8dpmm dots ──
   const storeY    = config ? mm2d(config.storeY   ?? 1.8) : 15;
@@ -152,8 +162,8 @@ export function generateZPLCode(params: LabelParams, config?: any): string {
 
   return (
 `^XA
-^PW406
-^LL203
+^PW${W}
+^LL${H}
 ^LS0
 
 ^FX --- Shop Name (Arabic ^GF bitmap) ---
@@ -167,7 +177,7 @@ ${nameGF}
 ^FO${barcodeX},${barcodeY}^BCN,${bcHeight},N,N,N^FD${barcodeVal}^FS
 
 ^FX --- Barcode digits below ---
-${showDigits ? `^FO0,${digitsY}^FB406,1,0,C^A0N,18,18^FD${barcodeVal}^FS` : ''}
+${showDigits ? `^FO0,${digitsY}^FB${W},1,0,C^A0N,18,18^FD${barcodeVal}^FS` : ''}
 
 ^FX --- Price (Arabic ^GF bitmap) ---
 ${priceGF}
@@ -209,8 +219,13 @@ export function buildMultiLabelZPL(
 // ─────────────────────────────────────────────────────────────────────────────
 // Labelary API: single label PNG
 // ─────────────────────────────────────────────────────────────────────────────
-export async function fetchLabelaryPNG(zplCode: string): Promise<Blob> {
-  const res = await fetch(`${LABELARY_BASE}/0/`, {
+export async function fetchLabelaryPNG(
+  zplCode : string,
+  widthMm  = 50.8,
+  heightMm = 25.4
+): Promise<Blob> {
+  const base = labelaryUrl(widthMm, heightMm);
+  const res = await fetch(`${base}/0/`, {
     method : 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'image/png' },
     body   : zplCode,
@@ -222,8 +237,13 @@ export async function fetchLabelaryPNG(zplCode: string): Promise<Blob> {
 // ─────────────────────────────────────────────────────────────────────────────
 // Labelary API: ALL labels as one PDF (no index = all pages)
 // ─────────────────────────────────────────────────────────────────────────────
-export async function fetchLabelaryPDF(multiZpl: string): Promise<Blob> {
-  const res = await fetch(`${LABELARY_BASE}/`, {
+export async function fetchLabelaryPDF(
+  multiZpl : string,
+  widthMm   = 50.8,
+  heightMm  = 25.4
+): Promise<Blob> {
+  const base = labelaryUrl(widthMm, heightMm);
+  const res = await fetch(`${base}/`, {
     method : 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/pdf' },
     body   : multiZpl,
@@ -236,19 +256,21 @@ export async function fetchLabelaryPDF(multiZpl: string): Promise<Blob> {
 // Preview: generate ZPL for one item → fetch PNG from Labelary
 // ─────────────────────────────────────────────────────────────────────────────
 export async function fetchLabelPreviewDataUrl(
-  item        : any,
-  config      : any,
+  item         : any,
+  config       : any,
   storeSettings: any
 ): Promise<string> {
   const shopName    = config?.customStoreName  || storeSettings?.storeName || 'المهندس للاتصالات';
   const productName = (item.title || item.name || 'منتج').substring(0, 30);
   const barcodeVal  = String(item.barcode || item.id || '0000000000');
   const price       = item.salePrice ?? item.price ?? 0;
+  const widthMm     = config?.widthMm  ?? 50.8;
+  const heightMm    = config?.heightMm ?? 25.4;
 
   const zpl  = generateZPLCode(
     { shopName, productName, barcodeValue: barcodeVal, price: `EGP ${price}` },
     config
   );
-  const blob = await fetchLabelaryPNG(zpl);
+  const blob = await fetchLabelaryPNG(zpl, widthMm, heightMm);
   return URL.createObjectURL(blob);
 }

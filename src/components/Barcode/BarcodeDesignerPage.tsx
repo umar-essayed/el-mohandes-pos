@@ -43,6 +43,7 @@ export const BarcodeDesignerPage: React.FC = () => {
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'elements' | 'paper' | 'custom' | 'batch' | 'tspl'>('batch');
   const [selectedElem, setSelectedElem] = useState<'store' | 'name' | 'barcode' | 'price' | 'origin' | null>('barcode');
+  const [paperUnit, setPaperUnit] = useState<'mm' | 'cm' | 'inch'>('mm');
 
   // Selected Items for Batch Label Printing
   const [printItems, setPrintItems] = useState<BarcodePrintItem[]>([
@@ -84,6 +85,20 @@ export const BarcodeDesignerPage: React.FC = () => {
   };
 
   // ── Labelary live preview (debounced 600ms) ──
+  // Conversion helpers
+  const toUnit = (mm: number) =>
+    paperUnit === 'inch' ? +(mm / 25.4).toFixed(3)
+    : paperUnit === 'cm'   ? +(mm / 10).toFixed(2)
+    : +mm.toFixed(1);
+  const toMm = (val: number) =>
+    paperUnit === 'inch' ? val * 25.4
+    : paperUnit === 'cm'   ? val * 10
+    : val;
+  const unitStep = paperUnit === 'inch' ? 0.01 : paperUnit === 'cm' ? 0.1 : 0.5;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const unitLabel = paperUnit === 'inch' ? 'بوصة (inch)' : paperUnit === 'cm' ? 'سنتيمتر (cm)' : 'ملليمتر (mm)';
+  const mm2dots = (mm: number) => Math.round(mm * 8);
+
   const fetchPreview = useCallback(() => {
     const sampleItem = printItems[0] || {
       title: 'جراب ايفون 13 سيلكون حراري',
@@ -110,7 +125,7 @@ export const BarcodeDesignerPage: React.FC = () => {
     );
 
     setPreviewLoading(true);
-    fetchLabelaryPNG(zpl)
+    fetchLabelaryPNG(zpl, config.widthMm ?? 50.8, config.heightMm ?? 25.4)
       .then(blob => {
         const url = URL.createObjectURL(blob);
         if (prevPreviewUrl.current) URL.revokeObjectURL(prevPreviewUrl.current);
@@ -618,39 +633,68 @@ export const BarcodeDesignerPage: React.FC = () => {
           {/* TAB 2: PAPER & MARGINS */}
           {activeTab === 'paper' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+
+              {/* Unit Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(15,23,42,0.7)', padding: '0.6rem', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)' }}>
+                <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 700 }}>وحدة القياس:</span>
+                {(['mm', 'cm', 'inch'] as const).map(u => (
+                  <button key={u} onClick={() => setPaperUnit(u)} style={{
+                    padding: '0.3rem 0.75rem', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 800,
+                    background: paperUnit === u ? '#6366f1' : 'rgba(255,255,255,0.07)',
+                    color: paperUnit === u ? '#fff' : '#94a3b8'
+                  }}>{u === 'mm' ? 'مم' : u === 'cm' ? 'سم' : 'بوصة'}</button>
+                ))}
+                <span style={{ fontSize: '0.72rem', color: '#4b5563', marginRight: 'auto' }}>
+                  {toUnit(config.widthMm).toFixed(2)} × {toUnit(config.heightMm).toFixed(2)} {paperUnit}
+                </span>
+              </div>
+
+              {/* Common Presets */}
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {[
+                  { label: '2×1"', w: 50.8,  h: 25.4 },
+                  { label: '3×2"', w: 76.2,  h: 50.8 },
+                  { label: '4×2"', w: 101.6, h: 50.8 },
+                  { label: '4×6"', w: 101.6, h: 152.4 },
+                  { label: '38×25mm', w: 38, h: 25 },
+                  { label: '50×30mm', w: 50, h: 30 },
+                ].map(preset => (
+                  <button key={preset.label} onClick={() => handleUpdateConfig({ widthMm: preset.w, heightMm: preset.h })} style={{
+                    padding: '0.28rem 0.7rem', borderRadius: 6, border: '1px solid rgba(251,191,36,0.3)',
+                    background: (Math.abs(config.widthMm - preset.w) < 0.5 && Math.abs(config.heightMm - preset.h) < 0.5) ? 'rgba(251,191,36,0.2)' : 'rgba(15,23,42,0.8)',
+                    color: '#fbbf24', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer'
+                  }}>{preset.label}</button>
+                ))}
+              </div>
+
+              {/* Width / Height inputs in selected unit */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.6rem' }}>
                 <div>
-                  <label style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 700 }}>عرض الملصق (مم)</label>
-                  <input type="number" step="0.1" className="input-field" value={config.widthMm} onChange={e => handleUpdateConfig({ widthMm: Number(e.target.value) })} />
+                  <label style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 700 }}>عرض الملصق ({paperUnit})</label>
+                  <input type="number" step={unitStep} className="input-field"
+                    value={toUnit(config.widthMm)}
+                    onChange={e => handleUpdateConfig({ widthMm: toMm(Number(e.target.value)) })} />
+                  <span style={{ fontSize: '0.68rem', color: '#4b5563' }}>{config.widthMm.toFixed(1)} mm</span>
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 700 }}>ارتفاع الملصق (مم)</label>
-                  <input type="number" step="0.1" className="input-field" value={config.heightMm} onChange={e => handleUpdateConfig({ heightMm: Number(e.target.value) })} />
+                  <label style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 700 }}>ارتفاع الملصق ({paperUnit})</label>
+                  <input type="number" step={unitStep} className="input-field"
+                    value={toUnit(config.heightMm)}
+                    onChange={e => handleUpdateConfig({ heightMm: toMm(Number(e.target.value)) })} />
+                  <span style={{ fontSize: '0.68rem', color: '#4b5563' }}>{config.heightMm.toFixed(1)} mm</span>
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 700 }}>الفجوة Gap (مم)</label>
+                  <label style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 700 }}>الفجوة Gap (mm)</label>
                   <input type="number" step="0.1" className="input-field" value={config.gap} onChange={e => handleUpdateConfig({ gap: Number(e.target.value) })} />
                 </div>
               </div>
 
               <h4 style={{ fontSize: '0.88rem', color: '#fbbf24', marginTop: '0.4rem' }}>الهوامش الإرشادية للطباعة (Print Margins):</h4>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.5rem' }}>
-                <div>
-                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>علوي Top</label>
-                  <input type="number" step="0.1" className="input-field" value={config.marginTop} onChange={e => handleUpdateConfig({ marginTop: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>سفلي Bottom</label>
-                  <input type="number" step="0.1" className="input-field" value={config.marginBottom} onChange={e => handleUpdateConfig({ marginBottom: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>أيسر Left</label>
-                  <input type="number" step="0.1" className="input-field" value={config.marginLeft} onChange={e => handleUpdateConfig({ marginLeft: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>أيمن Right</label>
-                  <input type="number" step="0.1" className="input-field" value={config.marginRight} onChange={e => handleUpdateConfig({ marginRight: Number(e.target.value) })} />
-                </div>
+                <div><label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>علوي Top</label><input type="number" step="0.1" className="input-field" value={config.marginTop} onChange={e => handleUpdateConfig({ marginTop: Number(e.target.value) })} /></div>
+                <div><label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>سفلي Bottom</label><input type="number" step="0.1" className="input-field" value={config.marginBottom} onChange={e => handleUpdateConfig({ marginBottom: Number(e.target.value) })} /></div>
+                <div><label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>أيسر Left</label><input type="number" step="0.1" className="input-field" value={config.marginLeft} onChange={e => handleUpdateConfig({ marginLeft: Number(e.target.value) })} /></div>
+                <div><label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>أيمن Right</label><input type="number" step="0.1" className="input-field" value={config.marginRight} onChange={e => handleUpdateConfig({ marginRight: Number(e.target.value) })} /></div>
               </div>
 
               <div>
@@ -660,6 +704,12 @@ export const BarcodeDesignerPage: React.FC = () => {
                   <option value={300}>300 DPI (11.8 dots/mm - عالية الدقة)</option>
                   <option value={600}>600 DPI (23.6 dots/mm - فايبر/صناعي)</option>
                 </select>
+              </div>
+
+              {/* Live dimensions summary */}
+              <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 8, padding: '0.6rem', fontSize: '0.75rem', color: '#34d399', lineHeight: 1.8 }}>
+                📐 <strong>أبعاد ZPL:</strong> ^PW{mm2dots(config.widthMm)} ^LL{mm2dots(config.heightMm)} (dots)<br />
+                🌐 <strong>Labelary URL:</strong> …/labels/{(config.widthMm/25.4).toFixed(3)}x{(config.heightMm/25.4).toFixed(3)}/
               </div>
             </div>
           )}
