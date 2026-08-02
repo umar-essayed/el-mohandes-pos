@@ -10,24 +10,20 @@ import { buildMultiLabelZPL, fetchLabelaryPDF, fetchLabelPreviewDataUrl } from '
 // This is 100% reliable: no app DOM interference, no blank pages possible.
 // ─────────────────────────────────────────────────────────────────────────────
 const CAIRO_FONT = `
-  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;800;900&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: 'Cairo', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif, 'Cairo';
     direction: rtl;
-    color: #000000;
-    background: #ffffff;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    color: #000000 !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 `;
 
 function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMargin: string = '0mm') {
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;border:none;opacity:0;pointer-events:none;z-index:-9999;';
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:10px;height:10px;border:none;opacity:0.01;pointer-events:none;z-index:-9999;';
   document.body.appendChild(iframe);
 
   const doc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -39,8 +35,7 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
   const isThermal = pageSize.includes('mm');
   const pageRule = isThermal ? `@page { size: ${pageSize}; margin: 0mm; }` : `@page { size: ${pageSize}; margin: ${pageMargin}; }`;
 
-  doc.open();
-  doc.write(`<!DOCTYPE html>
+  const fullHTML = `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
@@ -52,16 +47,21 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
       padding: 0 !important;
       width: 100% !important;
       height: auto !important;
-      min-height: 0 !important;
       background: #ffffff !important;
+      color: #000000 !important;
     }
   </style>
 </head>
-<body style="height: auto; min-height: 0; background: #ffffff;">${htmlBody}</body>
-</html>`);
+<body style="height: auto; background: #ffffff !important; color: #000000 !important;">
+  ${htmlBody}
+</body>
+</html>`;
+
+  doc.open();
+  doc.write(fullHTML);
   doc.close();
 
-  const triggerPrint = () => {
+  const doPrint = () => {
     try {
       iframe.contentWindow?.focus();
       iframe.contentWindow?.print();
@@ -70,11 +70,11 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
     }
     setTimeout(() => {
       try { document.body.removeChild(iframe); } catch (_) {}
-    }, 2500);
+    }, 3000);
   };
 
-  // Immediate print trigger to prevent Chrome blocking popup due to async delays
-  setTimeout(triggerPrint, 150);
+  // Wait 400ms for iframe DOM layout to finish rendering before calling print
+  setTimeout(doPrint, 400);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
