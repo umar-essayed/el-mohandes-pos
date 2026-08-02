@@ -10,13 +10,16 @@ import { buildMultiLabelZPL, fetchLabelaryPDF, fetchLabelPreviewDataUrl } from '
 // This is 100% reliable: no app DOM interference, no blank pages possible.
 // ─────────────────────────────────────────────────────────────────────────────
 const CAIRO_FONT = `
-  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;800;900&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: 'Cairo', Arial, sans-serif;
+    font-family: 'Cairo', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     direction: rtl;
-    color: #000;
-    background: #fff;
+    color: #000000;
+    background: #ffffff;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -32,7 +35,7 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
 
   doc.open();
   const isThermal = pageSize.includes('mm');
-  const pageRule = isThermal ? `@page { margin: 0; }` : `@page { size: ${pageSize}; margin: ${pageMargin}; }`;
+  const pageRule = isThermal ? `@page { size: 80mm auto; margin: 0mm; }` : `@page { size: ${pageSize}; margin: ${pageMargin}; }`;
 
   doc.write(`<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -48,10 +51,11 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
       width: 100% !important;
       height: auto !important;
       min-height: 0 !important;
+      background: #ffffff !important;
     }
   </style>
 </head>
-<body style="height: auto; min-height: 0;">${htmlBody}</body>
+<body style="height: auto; min-height: 0; background: #ffffff;">${htmlBody}</body>
 </html>`);
   doc.close();
 
@@ -67,9 +71,9 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
   };
 
   if (iframe.contentDocument?.fonts?.ready) {
-    iframe.contentDocument.fonts.ready.then(() => setTimeout(doPrint, 150));
+    iframe.contentDocument.fonts.ready.then(() => setTimeout(doPrint, 250));
   } else {
-    setTimeout(doPrint, 700);
+    setTimeout(doPrint, 800);
   }
 }
 
@@ -77,69 +81,69 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
 // HTML GENERATORS
 // ─────────────────────────────────────────────────────────────────────────────
 function generateInvoiceHTML(data: any, store: any): string {
-  // Use full width 78mm for 80mm roll printer, 56mm for 58mm roll printer
-  const widthVal = store.thermalPaperWidth === '58mm' ? '56mm' : '78mm';
-  
+  // 80mm x 70mm thermal paper specs: 80mm printable width, clear 2mm inner safe padding
+  const targetWidth = store.thermalPaperWidth === '58mm' ? '56mm' : '80mm';
+
   const itemRows = data.items.map((it: any) => `
-    <tr style="border-bottom:1px dotted #ccc;">
-      <td style="padding:3px 2px;text-align:right;font-weight:700;font-size:10px;word-break:break-word;">
+    <tr style="border-bottom:1px dotted #000;">
+      <td style="padding:4px 0;text-align:right;font-weight:800;font-size:11px;word-break:break-word;color:#000;">
         ${it.name}
-        ${it.imei ? `<div style="font-size:8.5px;font-family:monospace;color:#444;">IMEI: ${it.imei}</div>` : ''}
+        ${it.imei ? `<div style="font-size:9px;font-family:monospace;color:#000;font-weight:bold;">IMEI: ${it.imei}</div>` : ''}
       </td>
-      <td style="padding:3px 2px;text-align:center;font-weight:700;">${it.quantity}</td>
-      <td style="padding:3px 2px;text-align:left;font-weight:800;">${Number(it.totalPrice).toLocaleString('ar-EG')} ج.م</td>
+      <td style="padding:4px 0;text-align:center;font-weight:900;font-size:11px;color:#000;">${it.quantity}</td>
+      <td style="padding:4px 0;text-align:left;font-weight:900;font-size:11px;color:#000;">${Number(it.totalPrice).toLocaleString('ar-EG')} ج.م</td>
     </tr>`).join('');
 
   return `
-<div style="width:${widthVal};max-width:100%;margin:0 auto;padding:1mm 4mm 12mm 4mm;font-size:11px;line-height:1.4;direction:rtl;font-family:'Cairo',Arial,sans-serif;box-sizing:border-box;">
-  <div style="text-align:center;border-bottom:1px dashed #000;padding-bottom:6px;margin-bottom:6px;">
-    <h2 style="font-size:16px;font-weight:900;margin:0 0 2px 0;">${store.storeName || 'المهندس للاتصالات'}</h2>
-    <p style="font-size:9.5px;margin:0;color:#333;">تليفونات - إكسسوارات - صيانة - خدمات كاش</p>
-    ${store.storePhone ? `<p style="font-size:10px;margin:2px 0 0 0;font-weight:bold;">📞 تليفون: ${store.storePhone}</p>` : ''}
-    ${store.storeAddress ? `<p style="font-size:9.5px;margin:1px 0 0 0;color:#555;">📍 العنوان: ${store.storeAddress}</p>` : ''}
-    <div style="font-size:11px;margin:5px 0 0 0;font-weight:800;border-top:1px dashed #000;padding-top:4px;">
+<div style="width:${targetWidth};max-width:100%;margin:0 auto;padding:1mm 2mm 15mm 2mm;font-size:11.5px;line-height:1.45;direction:rtl;font-family:'Cairo','Segoe UI',Tahoma,sans-serif;box-sizing:border-box;color:#000;background:#fff;">
+  <div style="text-align:center;border-bottom:2px dashed #000;padding-bottom:8px;margin-bottom:8px;">
+    <h2 style="font-size:18px;font-weight:900;margin:0 0 3px 0;color:#000;letter-spacing:-0.5px;">${store.storeName || 'المهندس للاتصالات'}</h2>
+    <p style="font-size:10.5px;margin:0;color:#000;font-weight:700;">تليفونات - إكسسوارات - صيانة - خدمات كاش</p>
+    ${store.storePhone ? `<p style="font-size:11px;margin:3px 0 0 0;font-weight:900;color:#000;">📞 تليفون: ${store.storePhone}</p>` : ''}
+    ${store.storeAddress ? `<p style="font-size:10px;margin:2px 0 0 0;color:#000;font-weight:700;">📍 العنوان: ${store.storeAddress}</p>` : ''}
+    <div style="font-size:12px;margin:6px 0 0 0;font-weight:900;border-top:1.5px dashed #000;padding-top:6px;color:#000;">
       فاتورة بيع رقم: #${data.invoiceNumber}
     </div>
-    <div style="font-size:9.5px;color:#555;">التاريخ: ${data.date}</div>
+    <div style="font-size:10px;color:#000;font-weight:700;margin-top:2px;">التاريخ: ${data.date}</div>
   </div>
 
-  <div style="font-size:10px;border-bottom:1px dashed #000;padding-bottom:5px;margin-bottom:5px;">
-    <div style="display:flex;justify-content:space-between;">
+  <div style="font-size:11px;border-bottom:1.5px dashed #000;padding-bottom:6px;margin-bottom:6px;color:#000;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
       <span>الزبون: <strong>${data.customerName || 'زبون عام'}</strong></span>
-      ${data.customerPhone ? `<span>📞 ${data.customerPhone}</span>` : ''}
+      ${data.customerPhone ? `<span style="font-weight:800;">📞 ${data.customerPhone}</span>` : ''}
     </div>
-    <div style="color:#444;margin-top:2px;">الكاشير: ${data.cashierName || 'المهندس'}</div>
+    <div style="color:#000;margin-top:3px;font-weight:700;">الكاشير: ${data.cashierName || 'المهندس'}</div>
   </div>
 
-  <table style="width:100%;border-collapse:collapse;margin:4px 0;font-size:10px;">
+  <table style="width:100%;border-collapse:collapse;margin:6px 0;font-size:11px;">
     <thead>
-      <tr style="border-bottom:1.5px solid #000;">
-        <th style="text-align:right;padding:3px 2px;">الصنف</th>
-        <th style="text-align:center;padding:3px 2px;width:28px;">ك</th>
-        <th style="text-align:left;padding:3px 2px;width:58px;">الإجمالي</th>
+      <tr style="border-bottom:2px solid #000;">
+        <th style="text-align:right;padding:4px 0;font-size:11.5px;font-weight:900;color:#000;">الصنف</th>
+        <th style="text-align:center;padding:4px 0;width:30px;font-size:11.5px;font-weight:900;color:#000;">ك</th>
+        <th style="text-align:left;padding:4px 0;width:65px;font-size:11.5px;font-weight:900;color:#000;">الإجمالي</th>
       </tr>
     </thead>
     <tbody>${itemRows}</tbody>
   </table>
 
-  ${data.tradeIn ? `<div style="font-size:9px;background:#f1f5f9;padding:3px 5px;margin:4px 0;border:1px solid #ccc;border-radius:3px;">🔄 استبدال: ${data.tradeIn.model} (-${Number(data.tradeIn.agreedPrice).toLocaleString('ar-EG')} ج.م)</div>` : ''}
+  ${data.tradeIn ? `<div style="font-size:10px;background:#f8fafc;padding:4px 6px;margin:6px 0;border:1px solid #000;border-radius:4px;font-weight:800;color:#000;">🔄 استبدال: ${data.tradeIn.model} (-${Number(data.tradeIn.agreedPrice).toLocaleString('ar-EG')} ج.م)</div>` : ''}
 
-  <div style="border-top:1.5px dashed #000;padding-top:5px;margin-top:5px;font-size:10.5px;">
-    <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+  <div style="border-top:2px dashed #000;padding-top:6px;margin-top:6px;font-size:11.5px;color:#000;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-weight:800;">
       <span>المجموع:</span><span>${Number(data.subtotal).toLocaleString('ar-EG')} ج.م</span>
     </div>
-    ${data.discount > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:2px;color:#555;"><span>الخصم:</span><span>-${Number(data.discount).toLocaleString('ar-EG')} ج.م</span></div>` : ''}
-    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:900;border-top:1px solid #000;padding-top:4px;marginTop:3px;">
+    ${data.discount > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:3px;color:#000;font-weight:800;"><span>الخصم:</span><span>-${Number(data.discount).toLocaleString('ar-EG')} ج.م</span></div>` : ''}
+    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:900;border-top:2px solid #000;padding-top:5px;margin-top:4px;color:#000;">
       <span>الصافي المطلوب:</span><span>${Number(data.totalAmount).toLocaleString('ar-EG')} ج.م</span>
     </div>
   </div>
 
-  <div style="text-align:center;margin-top:10px;font-size:9.5px;border-top:1px dotted #000;padding-top:5px;color:#333;line-height:1.5;">
+  <div style="text-align:center;margin-top:12px;font-size:10.5px;border-top:1.5px dotted #000;padding-top:6px;color:#000;font-weight:800;line-height:1.5;">
     ${store.receiptFooterText || 'شكراً لزيارتكم — البضاعة المباعة ترد وتستبدل خلال 14 يوماً'}
   </div>
 
-  <!-- Feed Margin to clear printer paper cutter -->
-  <div style="height:12mm;clear:both;"></div>
+  <!-- Extended feed margin for automatic paper cutter -->
+  <div style="height:15mm;clear:both;"></div>
 </div>`;
 }
 
