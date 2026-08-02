@@ -12,19 +12,19 @@ export const PrintablesModal: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Automatic Print Trigger if autoPrintInvoice setting is ENABLED
+  useEffect(() => {
+    if (activePrintDocument && activePrintDocument.type === 'INVOICE' && storeSettings.autoPrintInvoice) {
+      const timer = setTimeout(() => {
+        window.print();
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [activePrintDocument, storeSettings.autoPrintInvoice]);
+
   if (!activePrintDocument) return null;
 
   const { type, data } = activePrintDocument;
-
-  // RULE 1: On mobile devices, NEVER popup sales invoice preview at all!
-  if (type === 'INVOICE' && isMobile) {
-    return null;
-  }
-
-  // RULE 2: If manual print is configured (autoPrintInvoice = false), NEVER popup sales invoice preview on desktop or mobile!
-  if (type === 'INVOICE' && !storeSettings.autoPrintInvoice) {
-    return null;
-  }
 
   const handlePrintTrigger = () => {
     window.print();
@@ -32,19 +32,20 @@ export const PrintablesModal: React.FC = () => {
 
   return (
     <div className="modal-overlay no-print" style={{ zIndex: 2000 }}>
-      <div className="modal-content" style={{ maxWidth: type === 'CONTRACT' ? 750 : 450, padding: 0, overflow: 'hidden' }}>
+      <div className="modal-content" style={{ maxWidth: type === 'CONTRACT' ? 750 : 420, padding: 0, overflow: 'hidden', borderRadius: 16 }}>
         
         {/* Action Header bar */}
         <div style={{ background: '#0f172a', padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
-          <span style={{ fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <span style={{ fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.95rem' }}>
             <Printer size={18} />
             {type === 'INVOICE' && 'معاينة فاتورة البيع الحرارية (80mm)'}
-            {type === 'CONTRACT' && 'معاينة عقد شراء / مبايعة جهاز مستعمل بالرقم القومي'}
+            {type === 'CONTRACT' && 'معاينة عقد شراء / مبايعة هاتف مستعمل'}
             {type === 'MAINTENANCE' && 'معاينة إيصال استلام صيانة الزبون'}
+            {type === 'BARCODE_LABELS' && 'معاينة ملصقات الباركود'}
           </span>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '0.85rem' }} onClick={handlePrintTrigger}>
-              طباعة الآن 🖨️
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button className="btn btn-primary" style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem', fontWeight: 800 }} onClick={handlePrintTrigger}>
+              طباعة الفاتورة 🖨️
             </button>
             <button
               onClick={() => setActivePrintDocument(null)}
@@ -56,75 +57,86 @@ export const PrintablesModal: React.FC = () => {
         </div>
 
         {/* Printable Document Canvas Body */}
-        <div style={{ padding: '1.5rem', maxHeight: '75vh', overflowY: 'auto', background: '#e2e8f0', color: '#000' }}>
+        <div style={{ padding: '1.2rem', maxHeight: '75vh', overflowY: 'auto', background: '#e2e8f0', color: '#000' }}>
           <div className="print-area">
 
             {/* TYPE 1: THERMAL SALES INVOICE (80mm) */}
             {type === 'INVOICE' && (
               <div className="thermal-receipt">
-                <div className="thermal-header">
-                  <h2>محل المهندس للاتصالات</h2>
-                  <p style={{ fontSize: 11 }}>تليفونات - إكسسوارات - صيانة - خدمات كاش</p>
-                  <p style={{ fontSize: 10, marginTop: 2 }}>تليفون المحل: {storeSettings.storePhone}</p>
-                  <div style={{ fontSize: 10, margin: '6px 0 0 0', fontWeight: 'bold' }}>
-                    فاتورة رقم: #{data.invoiceNumber}
+                
+                {/* Header info */}
+                <div className="thermal-header" style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: 6, marginBottom: 6 }}>
+                  <h2 style={{ fontSize: 16, fontWeight: 900, margin: '0 0 2px 0' }}>{storeSettings.storeName}</h2>
+                  <p style={{ fontSize: 10, margin: 0, color: '#333' }}>تليفونات - إكسسوارات - صيانة - خدمات كاش</p>
+                  {storeSettings.storePhone && (
+                    <p style={{ fontSize: 10, margin: '2px 0 0 0', color: '#333' }}>تليفون المحل: {storeSettings.storePhone}</p>
+                  )}
+                  <div style={{ fontSize: 11, margin: '6px 0 0 0', fontWeight: 800, borderTop: '1px dashed #000', paddingTop: 4 }}>
+                    فاتورة بيع رقم: #{data.invoiceNumber}
                   </div>
-                  <div style={{ fontSize: 10 }}>التاريخ: {data.date}</div>
+                  <div style={{ fontSize: 10, color: '#555' }}>التاريخ: {data.date}</div>
                 </div>
 
-                <div style={{ fontSize: 11, marginBottom: 6 }}>
-                  <div>الزبون: <strong>{data.customerName}</strong></div>
-                  {data.customerPhone && <div>التليفون: {data.customerPhone}</div>}
-                  <div>الكاشير: {data.cashierName}</div>
+                {/* Customer & Cashier Info */}
+                <div style={{ fontSize: 10.5, borderBottom: '1px dashed #000', paddingBottom: 6, marginBottom: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>الزبون: <strong>{data.customerName || 'زبون عام'}</strong></span>
+                    {data.customerPhone && <span>تليفون: {data.customerPhone}</span>}
+                  </div>
+                  <div style={{ color: '#444', marginTop: 2 }}>الكاشير: {data.cashierName || 'المهندس'}</div>
                 </div>
 
-                <table className="thermal-table">
+                {/* Items Table */}
+                <table className="thermal-table" style={{ width: '100%', borderCollapse: 'collapse', margin: '6px 0', fontSize: 10.5 }}>
                   <thead>
-                    <tr>
-                      <th style={{ textAlign: 'right' }}>الصنف</th>
-                      <th style={{ textAlign: 'center' }}>الكمية</th>
-                      <th style={{ textAlign: 'left' }}>الإجمالي</th>
+                    <tr style={{ borderBottom: '1.5px solid #000' }}>
+                      <th style={{ textAlign: 'right', padding: '3px 0' }}>الصنف</th>
+                      <th style={{ textAlign: 'center', padding: '3px 0', width: 35 }}>العدد</th>
+                      <th style={{ textAlign: 'left', padding: '3px 0', width: 65 }}>الإجمالي</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.items.map((it: any, idx: number) => (
-                      <tr key={idx}>
-                        <td>
+                      <tr key={idx} style={{ borderBottom: '1px dotted #ccc' }}>
+                        <td style={{ padding: '4px 0', textAlign: 'right', wordBreak: 'break-word', fontWeight: 700 }}>
                           {it.name}
-                          {it.imei && <div style={{ fontSize: 9, fontFamily: 'monospace' }}>IMEI: {it.imei}</div>}
+                          {it.imei && <div style={{ fontSize: 9, fontFamily: 'monospace', color: '#333' }}>IMEI: {it.imei}</div>}
                         </td>
-                        <td style={{ textAlign: 'center' }}>{it.quantity}</td>
-                        <td style={{ textAlign: 'left' }}>{it.totalPrice} ج.م</td>
+                        <td style={{ padding: '4px 0', textAlign: 'center', fontWeight: 700 }}>{it.quantity}</td>
+                        <td style={{ padding: '4px 0', textAlign: 'left', fontWeight: 800 }}>{it.totalPrice.toLocaleString('ar-EG')} ج.م</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
 
+                {/* Trade-In Info if present */}
                 {data.tradeIn && (
-                  <div style={{ fontSize: 10, background: '#eee', padding: 4, borderRadius: 4, margin: '4px 0' }}>
-                    🔄 استبدال جهاز: {data.tradeIn.model} (-{data.tradeIn.agreedPrice} ج.م)
+                  <div style={{ fontSize: 10, background: '#f1f5f9', padding: '4px 6px', borderRadius: 4, margin: '6px 0', border: '1px solid #cbd5e1' }}>
+                    🔄 استبدال جهاز: {data.tradeIn.model} (-{data.tradeIn.agreedPrice.toLocaleString('ar-EG')} ج.م)
                   </div>
                 )}
 
-                <div className="thermal-total">
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                {/* Totals Breakdown */}
+                <div className="thermal-total" style={{ borderTop: '1.5px dashed #000', paddingTop: 6, marginTop: 6, fontSize: 11 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
                     <span>المجموع:</span>
-                    <span>{data.subtotal} ج.م</span>
+                    <span>{data.subtotal.toLocaleString('ar-EG')} ج.م</span>
                   </div>
                   {data.discount > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#666' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2, color: '#555' }}>
                       <span>الخصم:</span>
-                      <span>-{data.discount} ج.م</span>
+                      <span>-{data.discount.toLocaleString('ar-EG')} ج.م</span>
                     </div>
                   )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginTop: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 900, borderTop: '1px solid #000', paddingTop: 4, marginTop: 4 }}>
                     <span>الصافي المطلوب:</span>
-                    <span>{data.totalAmount} ج.م</span>
+                    <span>{data.totalAmount.toLocaleString('ar-EG')} ج.م</span>
                   </div>
                 </div>
 
-                <div style={{ textTransform: 'uppercase', textAlign: 'center', marginTop: 12, fontSize: 10, borderTop: '1px dotted #000', paddingTop: 6 }}>
-                  {storeSettings.receiptFooterText}
+                {/* Receipt Footer Text */}
+                <div style={{ textAlign: 'center', marginTop: 12, fontSize: 9.5, borderTop: '1px dotted #000', paddingTop: 6, color: '#333', lineHeight: 1.4 }}>
+                  {storeSettings.receiptFooterText || 'شكراً لزيارتكم محل المهندس - البضاعة المباعة ترد وتستبدل خلال 14 يوماً'}
                 </div>
               </div>
             )}
@@ -191,7 +203,7 @@ export const PrintablesModal: React.FC = () => {
               </div>
             )}
 
-            {/* TYPE 4: THERMAL BARCODE LABELS (42.5mm x 25.0mm) */}
+            {/* TYPE 3: THERMAL BARCODE LABELS (42.5mm x 25.0mm) */}
             {type === 'BARCODE_LABELS' && (
               <div style={{ background: '#fff', color: '#000', padding: 0 }}>
                 {data.items.map((item: any) =>
@@ -248,16 +260,18 @@ export const PrintablesModal: React.FC = () => {
                 )}
               </div>
             )}
+
+            {/* TYPE 4: MAINTENANCE RECEIPT */}
             {type === 'MAINTENANCE' && (
-              <div className="thermal-receipt" style={{ width: '80mm' }}>
-                <div className="thermal-header">
-                  <h2>إيصال استلام صيانة</h2>
-                  <p style={{ fontSize: 12, fontWeight: 'bold' }}>{storeSettings.storeName}</p>
-                  <p style={{ fontSize: 11 }}>تذكرة رقم: #{data.ticketNumber}</p>
-                  <p style={{ fontSize: 10 }}>التاريخ: {data.receivedDate}</p>
+              <div className="thermal-receipt">
+                <div className="thermal-header" style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: 6, marginBottom: 6 }}>
+                  <h2 style={{ fontSize: 15, fontWeight: 900, margin: '0 0 2px 0' }}>إيصال استلام صيانة</h2>
+                  <p style={{ fontSize: 11, fontWeight: 'bold', margin: 0 }}>{storeSettings.storeName}</p>
+                  <p style={{ fontSize: 10, margin: '2px 0 0 0' }}>تذكرة رقم: #{data.ticketNumber}</p>
+                  <p style={{ fontSize: 10, color: '#555' }}>التاريخ: {data.receivedDate}</p>
                 </div>
 
-                <div style={{ fontSize: 11, lineHeight: 1.5, marginBottom: 8 }}>
+                <div style={{ fontSize: 10.5, lineHeight: 1.5, marginBottom: 8 }}>
                   <div>الزبون: <strong>{data.customerName}</strong></div>
                   <div>التليفون: {data.customerPhone}</div>
                   <div>الجهاز: <strong>{data.deviceModel}</strong></div>
@@ -267,7 +281,7 @@ export const PrintablesModal: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="thermal-total" style={{ fontSize: 11 }}>
+                <div className="thermal-total" style={{ borderTop: '1px dashed #000', paddingTop: 6, fontSize: 11 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>العربون المدفوع:</span>
                     <span><strong>{data.depositPaid} ج.م</strong></span>
@@ -278,7 +292,7 @@ export const PrintablesModal: React.FC = () => {
                   </div>
                 </div>
 
-                <div style={{ textAlign: 'center', marginTop: 12, fontSize: 10, borderTop: '1px dotted #000', paddingTop: 6 }}>
+                <div style={{ textAlign: 'center', marginTop: 12, fontSize: 9.5, borderTop: '1px dotted #000', paddingTop: 6, color: '#333' }}>
                   ⚠️ رجاء الاحتفاظ بهذا الإيصال لتسليم الجهاز
                   <br />
                   المحل غير مسؤول عن الأجهزة المتروكة بعد 30 يوماً
