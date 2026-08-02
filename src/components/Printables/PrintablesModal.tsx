@@ -26,96 +26,18 @@ const CAIRO_FONT = `
 `;
 
 function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMargin: string = '0mm') {
-  const isThermal = pageSize.includes('mm');
-
-  // For thermal printers, render HTML inside a temporary offscreen element, snapshot to Canvas PNG image,
-  // then print ONLY the image inside the iframe.
-  // This completely eliminates Chrome's default page height expansion / multi-meter roll feed bug!
-  if (isThermal) {
-    const container = document.createElement('div');
-    container.style.cssText = `
-      position: absolute; left: -9999px; top: -9999px; width: 576px;
-      background: #ffffff; color: #000000; font-family: 'Cairo', sans-serif;
-      direction: rtl; box-sizing: border-box; padding: 0; margin: 0;
-    `;
-    container.innerHTML = htmlBody;
-    document.body.appendChild(container);
-
-    setTimeout(() => {
-      // Create offscreen canvas matching precise element height
-      const widthPx = 576; // 80mm @ 203 DPI standard POS width
-      const heightPx = Math.max(100, container.scrollHeight);
-
-      // Use SVG foreignObject wrapper to convert HTML element to crisp image data URL
-      const svgData = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}">
-          <foreignObject width="100%" height="100%">
-            <div xmlns="http://www.w3.org/1999/xhtml" style="background:#ffffff;color:#000000;font-family:'Cairo',sans-serif;direction:rtl;width:100%;height:100%;">
-              ${htmlBody}
-            </div>
-          </foreignObject>
-        </svg>
-      `;
-
-      const img = new Image();
-      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(svgBlob);
-
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = widthPx;
-        canvas.height = heightPx;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, widthPx, heightPx);
-          ctx.drawImage(img, 0, 0);
-          const pngUrl = canvas.toDataURL('image/png');
-
-          // Print image in iframe with strict image height bounds
-          const iframe = document.createElement('iframe');
-          iframe.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;border:none;opacity:0;pointer-events:none;';
-          document.body.appendChild(iframe);
-          const doc = iframe.contentDocument || iframe.contentWindow?.document;
-          if (doc) {
-            doc.open();
-            doc.write(`<!DOCTYPE html>
-              <html>
-              <head>
-                <style>
-                  @page { margin: 0; }
-                  html, body { margin: 0; padding: 0; width: 100%; height: auto; background: #fff; text-align: center; }
-                  img { width: 100%; max-width: 100%; height: auto; display: block; margin: 0 auto; page-break-after: avoid; page-break-inside: avoid; }
-                </style>
-              </head>
-              <body>
-                <img src="${pngUrl}" />
-              </body>
-              </html>`);
-            doc.close();
-            setTimeout(() => {
-              try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); } catch (_) {}
-              setTimeout(() => {
-                try { document.body.removeChild(iframe); } catch (_) {}
-                URL.revokeObjectURL(url);
-                try { document.body.removeChild(container); } catch (_) {}
-              }, 2000);
-            }, 300);
-          }
-        }
-      };
-      img.src = url;
-    }, 400);
-    return;
-  }
-
-  // Standard A4 Print for Contracts
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;border:none;opacity:0;pointer-events:none;';
+  iframe.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;border:none;opacity:0;pointer-events:none;z-index:-9999;';
   document.body.appendChild(iframe);
 
   const doc = iframe.contentDocument || iframe.contentWindow?.document;
-  if (!doc) { document.body.removeChild(iframe); return; }
+  if (!doc) {
+    try { document.body.removeChild(iframe); } catch (_) {}
+    return;
+  }
+
+  const isThermal = pageSize.includes('mm');
+  const pageRule = isThermal ? `@page { size: ${pageSize}; margin: 0mm; }` : `@page { size: ${pageSize}; margin: ${pageMargin}; }`;
 
   doc.open();
   doc.write(`<!DOCTYPE html>
@@ -123,19 +45,36 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
 <head>
   <meta charset="UTF-8">
   <style>
-    @page { size: ${pageSize}; margin: ${pageMargin}; }
+    ${pageRule}
     ${CAIRO_FONT}
-    html, body { margin: 0; padding: 0; width: 100%; height: auto; }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+      height: auto !important;
+      min-height: 0 !important;
+      background: #ffffff !important;
+    }
   </style>
 </head>
-<body>${htmlBody}</body>
+<body style="height: auto; min-height: 0; background: #ffffff;">${htmlBody}</body>
 </html>`);
   doc.close();
 
-  setTimeout(() => {
-    try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); } catch (_) {}
-    setTimeout(() => { try { document.body.removeChild(iframe); } catch (_) {} }, 2000);
-  }, 600);
+  const triggerPrint = () => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch (e) {
+      console.error('print trigger error', e);
+    }
+    setTimeout(() => {
+      try { document.body.removeChild(iframe); } catch (_) {}
+    }, 2500);
+  };
+
+  // Immediate print trigger to prevent Chrome blocking popup due to async delays
+  setTimeout(triggerPrint, 150);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
