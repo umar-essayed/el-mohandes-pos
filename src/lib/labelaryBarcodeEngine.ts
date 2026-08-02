@@ -134,23 +134,21 @@ export function generateZPLCode(params: LabelParams, config?: any): string {
   const priceFsz  = config ? Math.round((config.priceFontSize  ?? 18) * 0.8) : 18;
 
   // ── Barcode params ──
-  // scaleWidth is already in dots (module width, typically 1-3)
   const bcModW    = Math.min(config?.scaleWidth ?? 2, 3);
-  // scaleHeight is in pixels at 203dpi ≈ same as dots at 8dpmm — do NOT multiply by DPMM!
   const rawBcH    = config?.scaleHeight ?? 45;
-  const bcHeight  = Math.min(rawBcH, 60); // cap at 60 dots so it fits (label is 203 dots)
-  // barcodeY: config is in mm
+  const bcHeight  = Math.min(rawBcH, 60);
   const barcodeY  = config ? mm2d(config.barcodeY ?? 9.0) : 75;
-  // Always auto-center barcode horizontally using the formula
   const barcodeX  = calculateBarcodeXOffset(barcodeVal, bcModW, W);
+  const digitsY   = barcodeY + bcHeight + 4;
 
-  // Build ^GF commands for Arabic text elements
-  const storeGF  = textToGFCommand(shopName,    0, storeY, storeFsz, true, W, 'center');
-  const nameGF   = textToGFCommand(productName, 0, nameY,  nameFsz,  true, W, 'center');
-  const priceGF  = textToGFCommand(priceText,   0, priceY, priceFsz, true, W, 'center');
+  // Build ^GF commands — skip entirely if text is empty (element hidden)
+  const storeGF  = shopName    ? textToGFCommand(shopName,    0, storeY, storeFsz, true, W, 'center') : '';
+  const nameGF   = productName ? textToGFCommand(productName, 0, nameY,  nameFsz,  true, W, 'center') : '';
+  const priceGF  = priceText   ? textToGFCommand(priceText,   0, priceY, priceFsz, true, W, 'center') : '';
 
-  // Barcode digits Y = just below barcode bottom edge
-  const digitsY  = barcodeY + bcHeight + 4;
+  // Barcode section — always draw barcode stripe, but conditionally show digits
+  const showDigits = config?.showText !== false;
+
 
   return (
 `^XA
@@ -169,7 +167,7 @@ ${nameGF}
 ^FO${barcodeX},${barcodeY}^BCN,${bcHeight},N,N,N^FD${barcodeVal}^FS
 
 ^FX --- Barcode digits below ---
-^FO0,${digitsY}^FB406,1,0,C^A0N,18,18^FD${barcodeVal}^FS
+${showDigits ? `^FO0,${digitsY}^FB406,1,0,C^A0N,18,18^FD${barcodeVal}^FS` : ''}
 
 ^FX --- Price (Arabic ^GF bitmap) ---
 ${priceGF}

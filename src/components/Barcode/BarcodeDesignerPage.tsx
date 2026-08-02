@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import JsBarcode from 'jsbarcode';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { BarcodeConfig, BarcodePrintItem } from '../../types';
@@ -11,6 +10,7 @@ import {
   generateTSPLStream,
   sendToWebUSBPrinter
 } from '../../lib/barcodeEngine';
+import { generateZPLCode, fetchLabelaryPNG } from '../../lib/labelaryBarcodeEngine';
 import {
   Printer,
   Sliders,
@@ -34,8 +34,10 @@ export const BarcodeDesignerPage: React.FC = () => {
   const { inventory, phones, storeSettings, setActivePrintDocument } = useApp();
   const toast = useToast();
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const barcodeHelperCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [previewUrl, setPreviewUrl]     = useState<string>('');
+  const [previewLoading, setPreviewLoading] = useState<boolean>(true);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevPreviewUrl = useRef<string>('');
 
   const [config, setConfig] = useState<BarcodeConfig>(loadBarcodeConfig);
   const [isLocked, setIsLocked] = useState<boolean>(false);
@@ -81,52 +83,8 @@ export const BarcodeDesignerPage: React.FC = () => {
     toast.success('تمت إعادة الضبط بنجاح 🎯', 'الأبعاد الذهبية القياسية 42.5×25.0 مم');
   };
 
-  // Canvas Pixels-Per-Millimeter Scale Factor
-  const CANVAS_SCALE = 16; // 1mm = 16px on canvas screen preview (42.5mm = 680px, 25mm = 400px)
-
-  // Render Canvas Simulation matching physical label
-  const renderCanvasPreview = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const scale = CANVAS_SCALE;
-    canvas.width = Math.round(config.widthMm * scale);
-    canvas.height = Math.round(config.heightMm * scale);
-
-    // 1. White Thermal Label Background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // 2. 2mm Grid Canvas Lines
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x <= config.widthMm; x += 2) {
-      ctx.beginPath();
-      ctx.moveTo(x * scale, 0);
-      ctx.lineTo(x * scale, canvas.height);
-      ctx.stroke();
-    }
-    for (let y = 0; y <= config.heightMm; y += 2) {
-      ctx.beginPath();
-      ctx.moveTo(0, y * scale);
-      ctx.lineTo(canvas.width, y * scale);
-      ctx.stroke();
-    }
-
-    // 3. Printable Red Dashed Margin Boundary Box
-    ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 4]);
-    ctx.strokeRect(
-      config.marginLeft * scale,
-      config.marginTop * scale,
-      (config.widthMm - config.marginLeft - config.marginRight) * scale,
-      (config.heightMm - config.marginTop - config.marginBottom) * scale
-    );
-    ctx.setLineDash([]); // Reset line dash
-
+  // ── Labelary live preview (debounced 600ms) ──
+  const fetchPreview = useCallback(() => {
     const sampleItem = printItems[0] || {
       title: 'جراب ايفون 13 سيلكون حراري',
       barcode: '4000123456',
@@ -135,88 +93,39 @@ export const BarcodeDesignerPage: React.FC = () => {
       storeName: config.customStoreName || storeSettings.storeName
     };
 
-    ctx.fillStyle = '#000000';
-    ctx.textBaseline = 'top';
+    const shopName    = config.customStoreName || storeSettings.storeName || 'المهندس للاتصالات';
+    const productName = config.showProductName ? (sampleItem.title || 'منتج') : '';
+    const barcodeVal  = config.showBarcode ? String(sampleItem.barcode || '4000123456') : '4000123456';
+    const price       = config.showPrice ? `EGP ${sampleItem.price || 0}` : '';
 
-    // Helper function to draw selection box for active element
-    const drawSelectionBox = (xMm: number, yMm: number, widthMm: number, heightMm: number, isSelected: boolean) => {
-      if (!isSelected || isLocked) return;
-      ctx.strokeStyle = '#3b82f6';
-      ctx.lineWidth = 2;
-      ctx.strokeRect((xMm * scale) - 4, (yMm * scale) - 4, (widthMm * scale) + 8, (heightMm * scale) + 8);
-      ctx.fillStyle = '#3b82f6';
-      ctx.fillRect((xMm * scale) - 6, (yMm * scale) - 6, 8, 8);
-      ctx.fillStyle = '#000000';
-    };
+    const zpl = generateZPLCode(
+      {
+        shopName: config.showStoreName ? shopName : '',
+        productName,
+        barcodeValue: barcodeVal,
+        price,
+        originText: config.showOrigin ? (config.customOriginText || 'صنع في مصر') : ''
+      },
+      config
+    );
 
-    // 1. Store Name
-    if (config.showStoreName) {
-      const text = config.customStoreName || sampleItem.storeName || storeSettings.storeName;
-      ctx.textAlign = 'center';
-      const fontSizePx = Math.round(config.storeFontSize * 0.85);
-      ctx.font = `bold ${fontSizePx}px 'Cairo', sans-serif`;
-      ctx.fillText(text, config.storeX * scale, config.storeY * scale);
-      drawSelectionBox(config.storeX - 10, config.storeY, 20, 2.5, selectedElem === 'store');
-    }
-
-    // 2. Product Name
-    if (config.showProductName) {
-      ctx.textAlign = 'center';
-      const fontSizePx = Math.round(config.nameFontSize * 0.85);
-      ctx.font = `bold ${fontSizePx}px 'Cairo', sans-serif`;
-      ctx.fillText(sampleItem.title, config.nameX * scale, config.nameY * scale);
-      drawSelectionBox(config.nameX - 12, config.nameY, 24, 2.8, selectedElem === 'name');
-    }
-
-    // 3. Barcode CODE128 (Local Offline Rendering)
-    if (config.showBarcode && sampleItem.barcode) {
-      try {
-        const helperCanvas = barcodeHelperCanvasRef.current || document.createElement('canvas');
-        JsBarcode(helperCanvas, sampleItem.barcode, {
-          format: 'CODE128',
-          width: config.scaleWidth || 2,
-          height: config.scaleHeight || 40,
-          displayValue: config.showText,
-          fontSize: 14,
-          margin: 0,
-          background: '#ffffff',
-          lineColor: '#000000'
-        });
-        const bcW_mm = (helperCanvas.width / 8);
-        const bcH_mm = (helperCanvas.height / 8);
-
-        const isCentered = config.barcodeX > 15;
-        const drawX = isCentered ? (config.barcodeX * scale) - ((bcW_mm * scale) / 2) : (config.barcodeX * scale);
-        const drawY = (config.barcodeY * scale);
-        ctx.drawImage(helperCanvas, drawX, drawY, bcW_mm * scale, bcH_mm * scale);
-        drawSelectionBox(isCentered ? config.barcodeX - (bcW_mm / 2) : config.barcodeX, config.barcodeY, bcW_mm, bcH_mm, selectedElem === 'barcode');
-      } catch (err) {
-        console.warn('JsBarcode preview warning:', err);
-      }
-    }
-
-    // 4. Price Text
-    if (config.showPrice) {
-      ctx.textAlign = 'left';
-      const fontSizePx = Math.round(config.priceFontSize * 0.85);
-      ctx.font = `900 ${fontSizePx}px 'Cairo', sans-serif`;
-      ctx.fillText(`ج.م ${sampleItem.price.toLocaleString('ar-EG')}`, config.priceX * scale, config.priceY * scale);
-      drawSelectionBox(config.priceX, config.priceY, 12, 3, selectedElem === 'price');
-    }
-
-    // 5. Origin Text
-    if (config.showOrigin) {
-      ctx.textAlign = 'right';
-      const fontSizePx = Math.round(config.originFontSize * 0.85);
-      ctx.font = `600 ${fontSizePx}px 'Cairo', sans-serif`;
-      ctx.fillText(config.customOriginText || sampleItem.origin || 'صنع في مصر', config.originX * scale, config.originY * scale);
-      drawSelectionBox(config.originX - 10, config.originY, 10, 2.5, selectedElem === 'origin');
-    }
-  };
+    setPreviewLoading(true);
+    fetchLabelaryPNG(zpl)
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        if (prevPreviewUrl.current) URL.revokeObjectURL(prevPreviewUrl.current);
+        prevPreviewUrl.current = url;
+        setPreviewUrl(url);
+        setPreviewLoading(false);
+      })
+      .catch(() => setPreviewLoading(false));
+  }, [config, printItems, storeSettings.storeName]);
 
   useEffect(() => {
-    renderCanvasPreview();
-  }, [config, printItems, selectedElem, isLocked]);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(fetchPreview, 600);
+    return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); };
+  }, [fetchPreview]);
 
   // Handle Mouse Click / Drag on Canvas
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -409,7 +318,6 @@ export const BarcodeDesignerPage: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', width: '100%' }}>
-      <canvas ref={barcodeHelperCanvasRef} style={{ display: 'none' }} />
 
       {/* Top Page Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', background: 'var(--bg-card)', padding: '1.2rem', borderRadius: 16, border: '1px solid var(--border-color)' }}>
@@ -457,15 +365,31 @@ export const BarcodeDesignerPage: React.FC = () => {
             </span>
           </div>
 
-          <div style={{ background: '#0b0f19', borderRadius: 12, padding: '2rem 1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', border: '1px dashed rgba(255,255,255,0.15)', minHeight: '300px' }}>
-            <canvas
-              ref={canvasRef}
-              onMouseDown={handleCanvasMouseDown}
-              onMouseMove={handleCanvasMouseMove}
-              onMouseUp={handleCanvasMouseUp}
-              onMouseLeave={handleCanvasMouseUp}
-              style={{ boxShadow: '0 12px 36px rgba(0,0,0,0.85)', borderRadius: 4, cursor: isLocked ? 'default' : 'move' }}
-            />
+          <div style={{ background: '#0b0f19', borderRadius: 12, padding: '2rem 1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', border: '1px dashed rgba(255,255,255,0.15)', minHeight: '240px', position: 'relative' }}>
+            {previewLoading && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#64748b', fontSize: '0.82rem' }}>
+                <div style={{ width: 28, height: 28, border: '3px solid #334155', borderTopColor: '#fbbf24', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                جاري تحميل المعاينة من Labelary API...
+              </div>
+            )}
+            {previewUrl && (
+              <img
+                src={previewUrl}
+                alt="label preview"
+                style={{
+                  boxShadow: '0 12px 36px rgba(0,0,0,0.85)',
+                  borderRadius: 4,
+                  display: previewLoading ? 'none' : 'block',
+                  maxWidth: '100%',
+                  width: `${config.widthMm * 4}px`,
+                  height: `${config.heightMm * 4}px`,
+                  objectFit: 'fill',
+                  imageRendering: 'pixelated'
+                }}
+                onLoad={() => setPreviewLoading(false)}
+              />
+            )}
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
 
           {/* Action Buttons */}
