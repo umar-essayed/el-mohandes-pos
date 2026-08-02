@@ -365,7 +365,7 @@ export const BarcodeDesignerPage: React.FC = () => {
             </span>
           </div>
 
-          <div style={{ background: '#0b0f19', borderRadius: 12, padding: '2rem 1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', border: '1px dashed rgba(255,255,255,0.15)', minHeight: '240px', position: 'relative' }}>
+          <div style={{ background: '#0b0f19', borderRadius: 12, padding: '1.5rem 1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', border: '1px dashed rgba(255,255,255,0.15)', minHeight: '280px', position: 'relative' }}>
             {previewLoading && (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#64748b', fontSize: '0.82rem' }}>
                 <div style={{ width: 28, height: 28, border: '3px solid #334155', borderTopColor: '#fbbf24', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -381,16 +381,17 @@ export const BarcodeDesignerPage: React.FC = () => {
                   borderRadius: 4,
                   display: previewLoading ? 'none' : 'block',
                   maxWidth: '100%',
-                  width: `${config.widthMm * 4}px`,
-                  height: `${config.heightMm * 4}px`,
+                  width: `${Math.min(config.widthMm * 12, 560)}px`,
+                  height: 'auto',
                   objectFit: 'fill',
-                  imageRendering: 'pixelated'
+                  imageRendering: 'crisp-edges',
                 }}
                 onLoad={() => setPreviewLoading(false)}
               />
             )}
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
+
 
           {/* Action Buttons */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
