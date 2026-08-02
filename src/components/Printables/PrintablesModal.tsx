@@ -39,7 +39,11 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
   <style>
     @page { size: ${pageSize}; margin: ${pageMargin}; }
     ${CAIRO_FONT}
-    body { margin: 0; padding: ${pageMargin === '0mm' ? '3mm' : '0'}; }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+    }
   </style>
 </head>
 <body>${htmlBody}</body>
@@ -68,6 +72,8 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
 // HTML GENERATORS
 // ─────────────────────────────────────────────────────────────────────────────
 function generateInvoiceHTML(data: any, store: any): string {
+  const widthClass = store.thermalPaperWidth === '58mm' ? '54mm' : '72mm';
+  
   const itemRows = data.items.map((it: any) => `
     <tr style="border-bottom:1px dotted #ccc;">
       <td style="padding:3px 0;text-align:right;font-weight:700;font-size:10px;word-break:break-word;">
@@ -79,12 +85,12 @@ function generateInvoiceHTML(data: any, store: any): string {
     </tr>`).join('');
 
   return `
-<div style="width:74mm;font-size:11px;line-height:1.4;direction:rtl;font-family:'Cairo',Arial,sans-serif;">
+<div style="width:${widthClass};max-width:100%;margin:0 auto;padding:2mm;font-size:11px;line-height:1.4;direction:rtl;font-family:'Cairo',Arial,sans-serif;box-sizing:border-box;">
   <div style="text-align:center;border-bottom:1px dashed #000;padding-bottom:6px;margin-bottom:6px;">
-    <h2 style="font-size:15px;font-weight:900;margin:0 0 2px 0;">${store.storeName || 'المهندس للاتصالات'}</h2>
+    <h2 style="font-size:16px;font-weight:900;margin:0 0 2px 0;">${store.storeName || 'المهندس للاتصالات'}</h2>
     <p style="font-size:9.5px;margin:0;color:#333;">تليفونات - إكسسوارات - صيانة - خدمات كاش</p>
-    ${store.storePhone ? `<p style="font-size:9.5px;margin:2px 0 0 0;">📞 ${store.storePhone}</p>` : ''}
-    ${store.storeAddress ? `<p style="font-size:9px;margin:1px 0 0 0;color:#555;">${store.storeAddress}</p>` : ''}
+    ${store.storePhone ? `<p style="font-size:10px;margin:2px 0 0 0;font-weight:bold;">📞 تليفون: ${store.storePhone}</p>` : ''}
+    ${store.storeAddress ? `<p style="font-size:9.5px;margin:1px 0 0 0;color:#555;">📍 العنوان: ${store.storeAddress}</p>` : ''}
     <div style="font-size:11px;margin:5px 0 0 0;font-weight:800;border-top:1px dashed #000;padding-top:4px;">
       فاتورة بيع رقم: #${data.invoiceNumber}
     </div>
@@ -117,12 +123,12 @@ function generateInvoiceHTML(data: any, store: any): string {
       <span>المجموع:</span><span>${Number(data.subtotal).toLocaleString('ar-EG')} ج.م</span>
     </div>
     ${data.discount > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:2px;color:#555;"><span>الخصم:</span><span>-${Number(data.discount).toLocaleString('ar-EG')} ج.م</span></div>` : ''}
-    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:900;border-top:1px solid #000;padding-top:4px;margin-top:3px;">
+    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:900;border-top:1px solid #000;padding-top:4px;marginTop:3px;">
       <span>الصافي المطلوب:</span><span>${Number(data.totalAmount).toLocaleString('ar-EG')} ج.م</span>
     </div>
   </div>
 
-  <div style="text-align:center;margin-top:10px;font-size:9px;border-top:1px dotted #000;padding-top:5px;color:#333;line-height:1.5;">
+  <div style="text-align:center;margin-top:10px;font-size:9.5px;border-top:1px dotted #000;padding-top:5px;color:#333;line-height:1.5;">
     ${store.receiptFooterText || 'شكراً لزيارتكم — البضاعة المباعة ترد وتستبدل خلال 14 يوماً'}
   </div>
 </div>`;
@@ -349,10 +355,11 @@ export const PrintablesModal: React.FC = () => {
   const doPrint = useCallback(() => {
     if (!activePrintDocument) return;
     const { type, data } = activePrintDocument;
+    const pageSize = storeSettings.thermalPaperWidth === '58mm' ? '58mm auto' : '80mm auto';
     if (type === 'INVOICE') {
-      printViaIframe(generateInvoiceHTML(data, storeSettings), '80mm auto', '0mm');
+      printViaIframe(generateInvoiceHTML(data, storeSettings), pageSize, '0mm');
     } else if (type === 'MAINTENANCE') {
-      printViaIframe(generateMaintenanceHTML(data, storeSettings), '80mm auto', '0mm');
+      printViaIframe(generateMaintenanceHTML(data, storeSettings), pageSize, '0mm');
     } else if (type === 'CONTRACT') {
       printViaIframe(generateContractHTML(data, storeSettings), 'A4', '15mm');
     }
