@@ -165,9 +165,9 @@ export const BarcodeDesignerModal: React.FC<{ isOpen: boolean; onClose: () => vo
           background: '#ffffff',
           lineColor: '#000000'
         });
-        const bcW = helperCanvas.width * (zoomScale / 3.5);
-        const bcH = helperCanvas.height * (zoomScale / 3.5);
-        ctx.drawImage(helperCanvas, (config.barcodeX * scale) - (bcW / 2), config.barcodeY * scale, bcW, bcH);
+        const isCentered = config.barcodeX > 15;
+        const bcDrawX = isCentered ? (config.barcodeX * scale) - (bcW / 2) : (config.barcodeX * scale);
+        ctx.drawImage(helperCanvas, bcDrawX, config.barcodeY * scale, bcW, bcH);
       } catch (err) {
         console.warn('JsBarcode render warning:', err);
       }

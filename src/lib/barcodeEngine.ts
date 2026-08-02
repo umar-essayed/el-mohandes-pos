@@ -1,37 +1,37 @@
 /**
  * GOLDEN STANDARD BARCODE PRESET (42.5 mm x 25.0 mm)
- * Technical Reference Specs
+ * Technical Reference Specs (barcode_system_technical_reference.md)
  */
 export const DEFAULT_BARCODE_CONFIG: BarcodeConfig = {
   widthMm: 42.5,
   heightMm: 25.0,
   gap: 1.0,
-  marginTop: 0.5,
+  marginTop: 0.6,
   marginBottom: 0.5,
-  marginLeft: 0.5,
+  marginLeft: 0.4,
   marginRight: 0.5,
 
-  storeX: 21.25,
+  storeX: 20.6,
   storeY: 1.8,
-  storeFontSize: 16,
+  storeFontSize: 20,
 
-  nameX: 21.25,
-  nameY: 5.5,
-  nameFontSize: 14,
+  nameX: 20.7,
+  nameY: 5.2,
+  nameFontSize: 16,
 
-  barcodeX: 21.25,
-  barcodeY: 9.2,
+  barcodeX: 9.7,
+  barcodeY: 9.0,
   scaleWidth: 2,
-  scaleHeight: 40,
+  scaleHeight: 45,
   showText: true,
 
-  priceX: 3.0,
-  priceY: 19.2,
+  priceX: 4.8,
+  priceY: 18.5,
   priceFontSize: 18,
 
-  originX: 39.5,
-  originY: 19.2,
-  originFontSize: 12,
+  originX: 38.0,
+  originY: 18.5,
+  originFontSize: 13,
 
   showStoreName: true,
   showProductName: true,
@@ -44,17 +44,13 @@ export const DEFAULT_BARCODE_CONFIG: BarcodeConfig = {
   dpi: 203
 };
 
-const LOCAL_STORAGE_KEY = 'elmohandes_barcode_config_v4';
+const LOCAL_STORAGE_KEY = 'elmohandes_barcode_config_v5';
 
 export function loadBarcodeConfig(): BarcodeConfig {
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Auto-sanitize bad coordinates if barcodeX was corrupt/off-screen
-      if (parsed.barcodeX < 15) parsed.barcodeX = 21.25;
-      if (parsed.storeX < 15) parsed.storeX = 21.25;
-      if (parsed.nameX < 15) parsed.nameX = 21.25;
       return { ...DEFAULT_BARCODE_CONFIG, ...parsed };
     }
   } catch (e) {
@@ -100,22 +96,24 @@ export function renderBarcodeLabelToCanvas(
   // 1. Store Name
   if (config.showStoreName) {
     const text = config.customStoreName || item.storeName || storeSettings?.storeName || 'المهندس للاتصالات';
-    const storeX = (config.storeX ?? (config.widthMm / 2)) * dotsPerMm;
+    const storeX = (config.storeX ?? 20.6) * dotsPerMm;
     const storeY = (config.storeY ?? 1.8) * dotsPerMm;
-    const fontSize = Math.round((config.storeFontSize || 16) * (dpi / 203));
-    ctx.font = `bold ${fontSize}px 'Cairo', sans-serif`;
+    const fontSizePx = Math.round((config.storeFontSize || 20) * (dpi / 203));
+    ctx.font = `bold ${fontSizePx}px 'Cairo', sans-serif`;
     ctx.textAlign = 'center';
     ctx.fillText(text, storeX, storeY);
   }
 
   // 2. Product Name
   if (config.showProductName) {
-    const nameX = (config.nameX ?? (config.widthMm / 2)) * dotsPerMm;
-    const nameY = (config.nameY ?? 5.5) * dotsPerMm;
-    const fontSize = Math.round((config.nameFontSize || 14) * (dpi / 203));
-    ctx.font = `bold ${fontSize}px 'Cairo', sans-serif`;
+    const nameX = (config.nameX ?? 20.7) * dotsPerMm;
+    const nameY = (config.nameY ?? 5.2) * dotsPerMm;
+    const fontSizePx = Math.round((config.nameFontSize || 16) * (dpi / 203));
+    ctx.font = `bold ${fontSizePx}px 'Cairo', sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(item.title, nameX, nameY);
+    let titleText = item.title || '';
+    if (titleText.length > 26) titleText = titleText.substring(0, 25) + '...';
+    ctx.fillText(titleText, nameX, nameY);
   }
 
   // 3. Barcode CODE128
@@ -126,21 +124,28 @@ export function renderBarcodeLabelToCanvas(
       JsBarcode(helperCanvas, barcodeText, {
         format: 'CODE128',
         width: config.scaleWidth || 2,
-        height: config.scaleHeight || 40,
+        height: Math.round((config.scaleHeight || 45) * (dpi / 203)),
         displayValue: config.showText ?? true,
-        fontSize: 14,
+        fontSize: 13,
         margin: 0,
         background: '#ffffff',
         lineColor: '#000000'
       });
 
-      const bcX = (config.barcodeX ?? (config.widthMm / 2)) * dotsPerMm;
-      const bcY = (config.barcodeY ?? 9.2) * dotsPerMm;
+      const bcY = (config.barcodeY ?? 9.0) * dotsPerMm;
       const bcW = helperCanvas.width;
       const bcH = helperCanvas.height;
 
-      // Draw centered horizontally at bcX
-      ctx.drawImage(helperCanvas, bcX - (bcW / 2), bcY, bcW, bcH);
+      let bcX = (config.barcodeX ?? 9.7) * dotsPerMm;
+      if (config.barcodeX && config.barcodeX > 15) {
+        bcX = (config.barcodeX * dotsPerMm) - (bcW / 2);
+      } else {
+        if (bcX + bcW > widthPx - 8) {
+          bcX = Math.max(4, (widthPx - bcW) / 2);
+        }
+      }
+
+      ctx.drawImage(helperCanvas, bcX, bcY, bcW, bcH);
     } catch (err) {
       console.warn('JsBarcode canvas render error:', err);
     }
@@ -148,20 +153,20 @@ export function renderBarcodeLabelToCanvas(
 
   // 4. Price
   if (config.showPrice) {
-    const priceX = (config.priceX ?? 3.0) * dotsPerMm;
-    const priceY = (config.priceY ?? 19.2) * dotsPerMm;
-    const fontSize = Math.round((config.priceFontSize || 18) * (dpi / 203));
-    ctx.font = `900 ${fontSize}px 'Cairo', sans-serif`;
+    const priceX = (config.priceX ?? 4.8) * dotsPerMm;
+    const priceY = (config.priceY ?? 18.5) * dotsPerMm;
+    const fontSizePx = Math.round((config.priceFontSize || 18) * (dpi / 203));
+    ctx.font = `900 ${fontSizePx}px 'Cairo', sans-serif`;
     ctx.textAlign = 'left';
     ctx.fillText(`ج.م ${Number(item.price || 0).toLocaleString('ar-EG')}`, priceX, priceY);
   }
 
   // 5. Origin
   if (config.showOrigin) {
-    const originX = (config.originX ?? (config.widthMm - 3.0)) * dotsPerMm;
-    const originY = (config.originY ?? 19.2) * dotsPerMm;
-    const fontSize = Math.round((config.originFontSize || 12) * (dpi / 203));
-    ctx.font = `600 ${fontSize}px 'Cairo', sans-serif`;
+    const originX = (config.originX ?? 38.0) * dotsPerMm;
+    const originY = (config.originY ?? 18.5) * dotsPerMm;
+    const fontSizePx = Math.round((config.originFontSize || 13) * (dpi / 203));
+    ctx.font = `600 ${fontSizePx}px 'Cairo', sans-serif`;
     ctx.textAlign = 'right';
     const originText = config.customOriginText || item.origin || 'صنع في مصر';
     ctx.fillText(originText, originX, originY);
@@ -182,7 +187,7 @@ export function generateBarcodeDataUrl(itemOrText: any, config?: BarcodeConfig, 
         width: config?.scaleWidth || 2,
         height: config?.scaleHeight || 40,
         displayValue: config?.showText ?? true,
-        fontSize: 14,
+        fontSize: 13,
         margin: 0,
         background: '#ffffff',
         lineColor: '#000000'
@@ -244,70 +249,31 @@ export function canvasToMonochromeBitmap(canvas: HTMLCanvasElement): { widthByte
 }
 
 /**
- * Compiles barcode items & TSPL config into raw binary TSPL2 commands payload
+ * Compiles barcode items & TSPL config into raw binary TSPL2 commands payload using 1-Bit Packed Monochrome Bitmap
  */
 export function generateTSPLStream(
   items: BarcodePrintItem[],
-  config: BarcodeConfig = loadBarcodeConfig()
+  config: BarcodeConfig = loadBarcodeConfig(),
+  storeSettings?: any
 ): Uint8Array {
   const encoder = new TextEncoder();
   const chunks: Uint8Array[] = [];
 
-  const dpi = config.dpi || 203;
-
   items.forEach(item => {
     const qty = item.qty || 1;
+    const canvas = renderBarcodeLabelToCanvas(item, config, storeSettings);
+    const { widthBytes, height, data } = canvasToMonochromeBitmap(canvas);
+
     const headerStr = 
       `SIZE ${config.widthMm} mm, ${config.heightMm} mm\n` +
-      `GAP ${config.gap} mm, 0 mm\n` +
+      `GAP ${config.gap || 1} mm, 0 mm\n` +
       `DIRECTION 1\n` +
-      `CLS\n`;
+      `CLS\n` +
+      `BITMAP 0,0,${widthBytes},${height},0,`;
+    
     chunks.push(encoder.encode(headerStr));
-
-    // 1. Store Name
-    if (config.showStoreName) {
-      const storeText = config.customStoreName || item.storeName || 'المهندس للاتصالات';
-      const x = mmToDots(config.storeX, dpi);
-      const y = mmToDots(config.storeY, dpi);
-      chunks.push(encoder.encode(`TEXT ${x},${y},"0",0,1,1,"${storeText}"\n`));
-    }
-
-    // 2. Product Name
-    if (config.showProductName) {
-      const x = mmToDots(config.nameX, dpi);
-      const y = mmToDots(config.nameY, dpi);
-      chunks.push(encoder.encode(`TEXT ${x},${y},"0",0,1,1,"${item.title}"\n`));
-    }
-
-    // 3. Barcode
-    if (config.showBarcode && item.barcode) {
-      const x = mmToDots(config.barcodeX, dpi);
-      const y = mmToDots(config.barcodeY, dpi);
-      const showTextVal = config.showText ? 1 : 0;
-      const scaleW = config.scaleWidth || 2;
-      const scaleH = config.scaleHeight || 49;
-
-      const barcodeCmd = `BARCODE ${x},${y},"128",${scaleH},${showTextVal},0,${scaleW},${scaleW * 2},"${item.barcode}"\n`;
-      chunks.push(encoder.encode(barcodeCmd));
-    }
-
-    // 4. Price
-    if (config.showPrice) {
-      const x = mmToDots(config.priceX, dpi);
-      const y = mmToDots(config.priceY, dpi);
-      chunks.push(encoder.encode(`TEXT ${x},${y},"0",0,1,1,"EGP ${item.price}"\n`));
-    }
-
-    // 5. Origin
-    if (config.showOrigin) {
-      const x = mmToDots(config.originX, dpi);
-      const y = mmToDots(config.originY, dpi);
-      const originText = config.customOriginText || item.origin || 'صنع في مصر';
-      chunks.push(encoder.encode(`TEXT ${x},${y},"0",0,1,1,"${originText}"\n`));
-    }
-
-    const printCmd = `PRINT ${qty},1\n`;
-    chunks.push(encoder.encode(printCmd));
+    chunks.push(data);
+    chunks.push(encoder.encode(`\nPRINT ${qty},1\n`));
   });
 
   const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
