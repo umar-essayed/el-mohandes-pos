@@ -17,20 +17,30 @@ const BarcodeLabelsPrinter: React.FC<{
   const items   = data.items || [];
 
   type Status = 'idle' | 'loading' | 'ready' | 'printing' | 'error';
-  const [status, setStatus]       = useState<Status>('idle');
-  const [errorMsg, setErrorMsg]   = useState('');
-  const [pdfUrl, setPdfUrl]       = useState<string | null>(null);
-  const [previews, setPreviews]   = useState<Record<string, string>>({});
-  const iframeRef                 = useRef<HTMLIFrameElement>(null);
-  const prevUrlRef                = useRef<string | null>(null);
+  const [status, setStatus]     = useState<Status>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [pdfUrl, setPdfUrl]     = useState<string | null>(null);
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const iframeRef               = useRef<HTMLIFrameElement>(null);
+  const prevUrlRef              = useRef<string | null>(null);
+  const prevPngRefs             = useRef<string[]>([]);
 
-  // Count total labels
   const totalLabels = items.reduce((s: number, it: any) => s + (it.qty || 1), 0);
 
-  // On mount: fetch PDF from Labelary + preview PNGs
+  // Stringify config to detect real changes
+  const configKey = JSON.stringify(config);
+
   useEffect(() => {
     if (items.length === 0) return;
+    let cancelled = false;
+
     setStatus('loading');
+    setPreviews({});
+
+    // Revoke old object URLs
+    if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
+    prevPngRefs.current.forEach(u => URL.revokeObjectURL(u));
+    prevPngRefs.current = [];
 
     const multiZpl = buildMultiLabelZPL(
       items.map((item: any) => ({ item, qty: item.qty || 1 })),
@@ -38,60 +48,54 @@ const BarcodeLabelsPrinter: React.FC<{
       storeSettings
     );
 
-    // Fetch PDF
+    // Fetch full PDF
     fetchLabelaryPDF(multiZpl)
       .then(blob => {
+        if (cancelled) return;
         const url = URL.createObjectURL(blob);
         prevUrlRef.current = url;
         setPdfUrl(url);
         setStatus('ready');
       })
       .catch(err => {
+        if (cancelled) return;
         console.error('Labelary PDF error:', err);
         setErrorMsg(`فشل الاتصال بـ Labelary API: ${err.message}`);
         setStatus('error');
       });
 
-    // Fetch preview PNGs per unique item (not per copy)
+    // Fetch preview PNG per unique item
     items.forEach((item: any, idx: number) => {
       fetchLabelPreviewDataUrl(item, config, storeSettings)
-        .then(url => setPreviews(prev => ({ ...prev, [idx]: url })))
-        .catch(() => {});
+        .then(url => {
+          if (cancelled) { URL.revokeObjectURL(url); return; }
+          prevPngRefs.current.push(url);
+          setPreviews(prev => ({ ...prev, [idx]: url }));
+        })
+        .catch(err => console.warn('Preview PNG failed:', err));
     });
 
-    return () => {
-      if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
-    };
-  }, []);
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configKey]);
 
   const handlePrint = () => {
     if (!pdfUrl) return;
     setStatus('printing');
 
-    // Open PDF in new window and print it - cleanest method
-    const win = window.open(pdfUrl, '_blank', 'width=800,height=600');
+    const win = window.open(pdfUrl, '_blank', 'width=900,height=700,toolbar=0,menubar=0');
     if (win) {
-      win.onload = () => {
-        setTimeout(() => {
-          win.print();
-          setStatus('ready');
-        }, 500);
-      };
-      // Fallback if onload doesn't fire (some browsers)
-      setTimeout(() => {
-        win.print();
-        setStatus('ready');
-      }, 1500);
+      // Try onload first
+      win.addEventListener('load', () => {
+        setTimeout(() => { try { win.print(); } catch (_) {} setStatus('ready'); }, 400);
+      });
+      // Always-fire fallback
+      setTimeout(() => { try { win.print(); } catch (_) {} setStatus('ready'); }, 1800);
     } else {
-      // Popup blocked: fall back to iframe print
+      // Popup blocked → iframe fallback
       const iframe = iframeRef.current;
       if (iframe) {
-        iframe.onload = () => {
-          setTimeout(() => {
-            iframe.contentWindow?.print();
-            setStatus('ready');
-          }, 300);
-        };
+        iframe.onload = () => setTimeout(() => { iframe.contentWindow?.print(); setStatus('ready'); }, 300);
         iframe.src = pdfUrl;
       }
     }
