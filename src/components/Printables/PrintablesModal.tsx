@@ -31,22 +31,27 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
   if (!doc) { document.body.removeChild(iframe); return; }
 
   doc.open();
+  const isThermal = pageSize.includes('mm');
+  const pageRule = isThermal ? `@page { margin: 0; }` : `@page { size: ${pageSize}; margin: ${pageMargin}; }`;
+
   doc.write(`<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    @page { size: ${pageSize}; margin: ${pageMargin}; }
+    ${pageRule}
     ${CAIRO_FONT}
     html, body {
       margin: 0 !important;
       padding: 0 !important;
       width: 100% !important;
+      height: auto !important;
+      min-height: 0 !important;
     }
   </style>
 </head>
-<body>${htmlBody}</body>
+<body style="height: auto; min-height: 0;">${htmlBody}</body>
 </html>`);
   doc.close();
 
