@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 
 export const BarcodeDesignerPage: React.FC = () => {
-  const { inventory, phones, storeSettings } = useApp();
+  const { inventory, phones, storeSettings, setActivePrintDocument } = useApp();
   const toast = useToast();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -351,107 +351,10 @@ export const BarcodeDesignerPage: React.FC = () => {
       toast.warning('أضف منتجات أولاً للطباعة');
       return;
     }
-
-    const printWin = window.open('', '_blank', 'width=800,height=600');
-    if (!printWin) {
-      toast.error('المتصفح حظر النافذة المنبثقة، اسمح بالنوافذ المنبثقة للطباعة');
-      return;
-    }
-
-    const renderItemHtml = (item: BarcodePrintItem) => {
-      let barcodeImgHtml = '';
-      if (config.showBarcode && item.barcode) {
-        try {
-          const helperCanvas = document.createElement('canvas');
-          JsBarcode(helperCanvas, item.barcode, {
-            format: 'CODE128',
-            width: config.scaleWidth || 2,
-            height: config.scaleHeight || 49,
-            displayValue: config.showText,
-            fontSize: 14,
-            margin: 0,
-            background: '#ffffff',
-            lineColor: '#000000'
-          });
-          const dataUrl = helperCanvas.toDataURL('image/png');
-          barcodeImgHtml = `<img src="${dataUrl}" style="position: absolute; left: ${config.barcodeX}mm; top: ${config.barcodeY}mm; max-height: 12mm; object-fit: contain;" />`;
-        } catch {
-          barcodeImgHtml = `<div style="position: absolute; left: ${config.barcodeX}mm; top: ${config.barcodeY}mm; font-family: monospace; font-weight: bold;">*${item.barcode}*</div>`;
-        }
-      }
-
-      return `
-        <div class="label-page">
-          ${config.showStoreName ? `<div style="position: absolute; left: 0; right: 0; top: ${config.storeY}mm; text-align: center; font-size: ${config.storeFontSize * 0.45}pt; font-weight: bold;">${config.customStoreName || item.storeName || storeSettings.storeName}</div>` : ''}
-          ${config.showProductName ? `<div style="position: absolute; left: 0; right: 0; top: ${config.nameY}mm; text-align: center; font-size: ${config.nameFontSize * 0.45}pt; font-weight: bold; padding: 0 1mm; overflow: hidden; white-space: nowrap;">${item.title}</div>` : ''}
-          ${barcodeImgHtml}
-          ${config.showPrice ? `<div style="position: absolute; left: ${config.priceX}mm; top: ${config.priceY}mm; font-size: ${config.priceFontSize * 0.45}pt; font-weight: 900;">ج.م ${item.price.toLocaleString('ar-EG')}</div>` : ''}
-          ${config.showOrigin ? `<div style="position: absolute; right: ${config.widthMm - config.originX}mm; top: ${config.originY}mm; font-size: ${config.originFontSize * 0.45}pt; font-weight: 600; color: #333;">${config.customOriginText || item.origin || 'صنع في مصر'}</div>` : ''}
-        </div>
-      `;
-    };
-
-    let allLabelsHtml = '';
-    printItems.forEach(item => {
-      const copies = item.qty || 1;
-      for (let i = 0; i < copies; i++) {
-        allLabelsHtml += renderItemHtml(item);
-      }
+    setActivePrintDocument({
+      type: 'BARCODE_LABELS',
+      data: { items: printItems, config }
     });
-
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html lang="ar" dir="rtl">
-      <head>
-        <meta charset="UTF-8" />
-        <title>طباعة ملصقات الباركود - محل المهندس</title>
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
-          
-          @page {
-            size: ${config.widthMm}mm ${config.heightMm}mm;
-            margin: 0;
-          }
-          
-          * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-          }
-          
-          body {
-            font-family: 'Cairo', sans-serif;
-            background: #fff;
-            color: #000;
-            direction: rtl;
-            -webkit-print-color-adjust: exact;
-          }
-
-          .label-page {
-            width: ${config.widthMm}mm;
-            height: ${config.heightMm}mm;
-            page-break-after: always;
-            position: relative;
-            overflow: hidden;
-            background: #fff;
-          }
-        </style>
-      </head>
-      <body>
-        ${allLabelsHtml}
-        <script>
-          window.onload = function() {
-            window.print();
-            setTimeout(function() { window.close(); }, 500);
-          };
-        </script>
-      </body>
-      </html>
-    `;
-
-    printWin.document.open();
-    printWin.document.write(htmlContent);
-    printWin.document.close();
   };
 
   // Generate TSPL Code String

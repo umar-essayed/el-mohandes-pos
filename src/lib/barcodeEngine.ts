@@ -1,4 +1,29 @@
+import JsBarcode from 'jsbarcode';
 import { BarcodeConfig, BarcodePrintItem } from '../types';
+
+/**
+ * Generates local base64 PNG data URL for a barcode using JsBarcode (offline support)
+ */
+export function generateBarcodeDataUrl(barcodeText: string, config?: BarcodeConfig): string {
+  try {
+    const canvas = document.createElement('canvas');
+    JsBarcode(canvas, barcodeText, {
+      format: 'CODE128',
+      width: config?.scaleWidth || 2,
+      height: config?.scaleHeight || 45,
+      displayValue: config?.showText ?? true,
+      fontSize: 14,
+      margin: 0,
+      background: '#ffffff',
+      lineColor: '#000000'
+    });
+    return canvas.toDataURL('image/png');
+  } catch (err) {
+    console.warn('JsBarcode data URL generation error:', err);
+    return '';
+  }
+}
+
 
 /**
  * GOLDEN STANDARD BARCODE PRESET (42.5 mm x 25.0 mm)

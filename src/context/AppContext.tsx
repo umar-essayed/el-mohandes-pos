@@ -101,8 +101,8 @@ interface AppContextType {
   clearAllData: () => void;
 
   // Print Modal state helper
-  activePrintDocument: { type: 'INVOICE' | 'CONTRACT' | 'MAINTENANCE'; data: any } | null;
-  setActivePrintDocument: (doc: { type: 'INVOICE' | 'CONTRACT' | 'MAINTENANCE'; data: any } | null) => void;
+  activePrintDocument: { type: 'INVOICE' | 'CONTRACT' | 'MAINTENANCE' | 'BARCODE_LABELS'; data: any } | null;
+  setActivePrintDocument: (doc: { type: 'INVOICE' | 'CONTRACT' | 'MAINTENANCE' | 'BARCODE_LABELS'; data: any } | null) => void;
 
   // Sync conflict notifications for admin
   syncConflicts: SyncConflict[];
@@ -156,7 +156,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [creditCustomers, setCreditCustomers] = useState<CreditCustomer[]>([]);
   const [creditPayments, setCreditPayments] = useState<CreditPayment[]>([]);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
-  const [activePrintDocument, setActivePrintDocument] = useState<{ type: 'INVOICE' | 'CONTRACT' | 'MAINTENANCE'; data: any } | null>(null);
+  const [activePrintDocument, setActivePrintDocument] = useState<{ type: 'INVOICE' | 'CONTRACT' | 'MAINTENANCE' | 'BARCODE_LABELS'; data: any } | null>(null);
   const [syncConflicts, setSyncConflicts] = useState<SyncConflict[]>([]);
 
   const updateStoreSettings = (newSettings: Partial<StoreSettings>) => {

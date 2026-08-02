@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Printer, X } from 'lucide-react';
+import { generateBarcodeDataUrl, DEFAULT_BARCODE_CONFIG } from '../../lib/barcodeEngine';
 
 export const PrintablesModal: React.FC = () => {
   const { activePrintDocument, setActivePrintDocument, storeSettings } = useApp();
@@ -32,7 +33,7 @@ export const PrintablesModal: React.FC = () => {
 
   return (
     <div className="modal-overlay no-print" style={{ zIndex: 2000 }}>
-      <div className="modal-content" style={{ maxWidth: type === 'CONTRACT' ? 750 : 420, padding: 0, overflow: 'hidden', borderRadius: 16 }}>
+      <div className="modal-content" style={{ maxWidth: type === 'CONTRACT' ? 750 : type === 'BARCODE_LABELS' ? 520 : 420, padding: 0, overflow: 'hidden', borderRadius: 16 }}>
         
         {/* Action Header bar */}
         <div style={{ background: '#0f172a', padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
@@ -41,11 +42,11 @@ export const PrintablesModal: React.FC = () => {
             {type === 'INVOICE' && 'معاينة فاتورة البيع الحرارية (80mm)'}
             {type === 'CONTRACT' && 'معاينة عقد شراء / مبايعة هاتف مستعمل'}
             {type === 'MAINTENANCE' && 'معاينة إيصال استلام صيانة الزبون'}
-            {type === 'BARCODE_LABELS' && 'معاينة ملصقات الباركود'}
+            {type === 'BARCODE_LABELS' && 'معاينة ودقة طباعة ملصقات الباركود'}
           </span>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <button className="btn btn-primary" style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem', fontWeight: 800 }} onClick={handlePrintTrigger}>
-              طباعة الفاتورة 🖨️
+              {type === 'BARCODE_LABELS' ? 'طباعة الملصقات 🖨️' : type === 'CONTRACT' ? 'طباعة العقد 🖨️' : type === 'MAINTENANCE' ? 'طباعة الإيصال 🖨️' : 'طباعة الفاتورة 🖨️'}
             </button>
             <button
               onClick={() => setActivePrintDocument(null)}
@@ -57,8 +58,8 @@ export const PrintablesModal: React.FC = () => {
         </div>
 
         {/* Printable Document Canvas Body */}
-        <div style={{ padding: '1.2rem', maxHeight: '75vh', overflowY: 'auto', background: '#e2e8f0', color: '#000' }}>
-          <div className="print-area">
+        <div style={{ padding: type === 'BARCODE_LABELS' ? '1.5rem 1rem' : '1.2rem', maxHeight: '75vh', overflowY: 'auto', background: type === 'BARCODE_LABELS' ? '#475569' : '#e2e8f0', color: '#000' }}>
+          <div className={`print-area ${type === 'BARCODE_LABELS' ? 'barcode-print-mode' : type === 'CONTRACT' ? 'contract-print-mode' : ''}`}>
 
             {/* TYPE 1: THERMAL SALES INVOICE (80mm) */}
             {type === 'INVOICE' && (
@@ -204,62 +205,170 @@ export const PrintablesModal: React.FC = () => {
             )}
 
             {/* TYPE 3: THERMAL BARCODE LABELS (42.5mm x 25.0mm) */}
-            {type === 'BARCODE_LABELS' && (
-              <div style={{ background: '#fff', color: '#000', padding: 0 }}>
-                {data.items.map((item: any) =>
-                  Array.from({ length: item.qty || 1 }).map((_, qIdx) => (
-                    <div
-                      key={`${item.id}-${qIdx}`}
-                      style={{
-                        width: `${data.config?.widthMm || 42.5}mm`,
-                        height: `${data.config?.heightMm || 25.0}mm`,
-                        pageBreakAfter: 'always',
-                        padding: '1mm',
-                        boxSizing: 'border-box',
-                        fontFamily: 'Cairo, sans-serif',
-                        fontSize: '9px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        textAlign: 'center',
-                        background: '#fff',
-                        color: '#000',
-                        margin: '0 auto 8px auto',
-                        border: '1px solid #ccc'
-                      }}
-                    >
-                      {data.config?.showStoreName && (
-                        <div style={{ fontSize: `${data.config?.storeFontSize || 10}px`, fontWeight: 'bold', lineHeight: 1 }}>
-                          {data.config?.customStoreName || item.storeName || storeSettings.storeName}
-                        </div>
-                      )}
+            {type === 'BARCODE_LABELS' && (() => {
+              const config = data.config || DEFAULT_BARCODE_CONFIG;
+              return (
+                <div style={{ background: 'transparent', color: '#000', padding: 0 }}>
+                  <style>{`
+                    @media print {
+                      @page {
+                        size: ${config.widthMm}mm ${config.heightMm}mm;
+                        margin: 0;
+                      }
+                      html, body {
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        background: #ffffff !important;
+                      }
+                      .print-area.barcode-print-mode {
+                        position: absolute !important;
+                        top: 0 !important;
+                        left: 0 !important;
+                        width: ${config.widthMm}mm !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        background: #ffffff !important;
+                      }
+                      .barcode-print-label-item {
+                        width: ${config.widthMm}mm !important;
+                        height: ${config.heightMm}mm !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        page-break-after: always !important;
+                        break-after: page !important;
+                      }
+                      .barcode-print-label-item:last-child {
+                        page-break-after: avoid !important;
+                        break-after: avoid !important;
+                      }
+                    }
+                  `}</style>
+                  {data.items.map((item: any, itemIdx: number) => {
+                    const copies = item.qty || 1;
+                    const barcodeText = item.barcode || item.id || '4000123456';
+                    const barcodeDataUrl = generateBarcodeDataUrl(barcodeText, config);
 
-                      {data.config?.showProductName && (
-                        <div style={{ fontSize: `${data.config?.nameFontSize || 9}px`, fontWeight: 'bold', lineHeight: 1.1, overflow: 'hidden', height: '1.8em' }}>
-                          {item.title}
-                        </div>
-                      )}
+                    return Array.from({ length: copies }).map((_, qIdx) => (
+                      <div
+                        key={`${item.id}-${itemIdx}-${qIdx}`}
+                        className="barcode-print-label-item"
+                        style={{
+                          width: `${config.widthMm}mm`,
+                          height: `${config.heightMm}mm`,
+                          position: 'relative',
+                          overflow: 'hidden',
+                          background: '#ffffff',
+                          color: '#000000',
+                          boxSizing: 'border-box',
+                          margin: '0 auto 12px auto',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                          borderRadius: 2,
+                          fontFamily: 'Cairo, sans-serif'
+                        }}
+                      >
+                        {/* 1. Store Name */}
+                        {config.showStoreName && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              left: `${config.storeX}mm`,
+                              top: `${config.storeY}mm`,
+                              transform: 'translateX(-50%)',
+                              fontSize: `${config.storeFontSize * 0.35}pt`,
+                              fontWeight: 'bold',
+                              lineHeight: 1,
+                              whiteSpace: 'nowrap',
+                              color: '#000'
+                            }}
+                          >
+                            {config.customStoreName || item.storeName || storeSettings.storeName}
+                          </div>
+                        )}
 
-                      {data.config?.showBarcode && item.barcode && (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        {/* 2. Product Name */}
+                        {config.showProductName && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              left: `${config.nameX}mm`,
+                              top: `${config.nameY}mm`,
+                              transform: 'translateX(-50%)',
+                              fontSize: `${config.nameFontSize * 0.35}pt`,
+                              fontWeight: 'bold',
+                              lineHeight: 1.1,
+                              whiteSpace: 'nowrap',
+                              color: '#000',
+                              maxWidth: `${config.widthMm - 2}mm`,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
+                            }}
+                          >
+                            {item.title}
+                          </div>
+                        )}
+
+                        {/* 3. Barcode CODE128 */}
+                        {config.showBarcode && barcodeDataUrl && (
                           <img
-                            src={`https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(item.barcode)}&scale=2&height=12&includetext=${data.config?.showText ? 'true' : 'false'}`}
-                            alt={item.barcode}
-                            style={{ height: '16mm', maxWidth: '100%', objectFit: 'contain' }}
+                            src={barcodeDataUrl}
+                            alt={barcodeText}
+                            style={{
+                              position: 'absolute',
+                              left: `${config.barcodeX}mm`,
+                              top: `${config.barcodeY}mm`,
+                              transform: 'translateX(-50%)',
+                              height: `${(config.scaleHeight || 45) * 0.22}mm`,
+                              maxWidth: `${config.widthMm - 2}mm`,
+                              objectFit: 'contain',
+                              imageRendering: 'pixelated'
+                            }}
                           />
-                        </div>
-                      )}
+                        )}
 
-                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '0 2px', fontSize: '9px', fontWeight: 'bold' }}>
-                        {data.config?.showPrice && <span>ج.م {item.price}</span>}
-                        {data.config?.showOrigin && <span style={{ fontSize: '8px', color: '#555' }}>{data.config?.customOriginText || item.origin || 'صنع في مصر'}</span>}
+                        {/* 4. Price */}
+                        {config.showPrice && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              left: `${config.priceX}mm`,
+                              top: `${config.priceY}mm`,
+                              fontSize: `${config.priceFontSize * 0.35}pt`,
+                              fontWeight: 900,
+                              lineHeight: 1,
+                              whiteSpace: 'nowrap',
+                              color: '#000'
+                            }}
+                          >
+                            ج.م {Number(item.price || 0).toLocaleString('ar-EG')}
+                          </div>
+                        )}
+
+                        {/* 5. Origin */}
+                        {config.showOrigin && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              left: `${config.originX}mm`,
+                              top: `${config.originY}mm`,
+                              transform: 'translateX(-100%)',
+                              fontSize: `${config.originFontSize * 0.35}pt`,
+                              fontWeight: 600,
+                              lineHeight: 1,
+                              whiteSpace: 'nowrap',
+                              color: '#333'
+                            }}
+                          >
+                            {config.customOriginText || item.origin || 'صنع في مصر'}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
+                    ));
+                  })}
+                </div>
+              );
+            })()}
 
             {/* TYPE 4: MAINTENANCE RECEIPT */}
             {type === 'MAINTENANCE' && (
