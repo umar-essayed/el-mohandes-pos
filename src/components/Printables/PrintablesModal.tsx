@@ -223,14 +223,28 @@ export const PrintablesModal: React.FC = () => {
                         padding: 0 !important;
                         background: #ffffff !important;
                         width: ${widthMm}mm !important;
-                        height: ${heightMm}mm !important;
+                        height: auto !important;
+                        min-height: 0 !important;
+                      }
+                      .modal-overlay, .modal-content {
+                        position: static !important;
+                        width: ${widthMm}mm !important;
+                        height: auto !important;
+                        min-height: 0 !important;
+                        max-height: none !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        background: transparent !important;
+                        overflow: visible !important;
                       }
                       .print-area.barcode-print-mode {
                         position: absolute !important;
                         top: 0 !important;
                         left: 0 !important;
                         width: ${widthMm}mm !important;
-                        height: ${heightMm}mm !important;
+                        height: auto !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         background: #ffffff !important;
@@ -244,7 +258,10 @@ export const PrintablesModal: React.FC = () => {
                         box-shadow: none !important;
                         page-break-after: always !important;
                         break-after: page !important;
+                        page-break-inside: avoid !important;
+                        break-inside: avoid !important;
                         overflow: hidden !important;
+                        display: block !important;
                       }
                       .barcode-print-label-item:last-child {
                         page-break-after: avoid !important;
