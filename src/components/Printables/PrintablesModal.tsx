@@ -77,20 +77,21 @@ function printViaIframe(htmlBody: string, pageSize: string = '80mm auto', pageMa
 // HTML GENERATORS
 // ─────────────────────────────────────────────────────────────────────────────
 function generateInvoiceHTML(data: any, store: any): string {
-  const widthClass = store.thermalPaperWidth === '58mm' ? '54mm' : '72mm';
+  // Use full width 78mm for 80mm roll printer, 56mm for 58mm roll printer
+  const widthVal = store.thermalPaperWidth === '58mm' ? '56mm' : '78mm';
   
   const itemRows = data.items.map((it: any) => `
     <tr style="border-bottom:1px dotted #ccc;">
-      <td style="padding:3px 0;text-align:right;font-weight:700;font-size:10px;word-break:break-word;">
+      <td style="padding:3px 2px;text-align:right;font-weight:700;font-size:10px;word-break:break-word;">
         ${it.name}
         ${it.imei ? `<div style="font-size:8.5px;font-family:monospace;color:#444;">IMEI: ${it.imei}</div>` : ''}
       </td>
-      <td style="padding:3px 0;text-align:center;font-weight:700;">${it.quantity}</td>
-      <td style="padding:3px 0;text-align:left;font-weight:800;">${Number(it.totalPrice).toLocaleString('ar-EG')} ج.م</td>
+      <td style="padding:3px 2px;text-align:center;font-weight:700;">${it.quantity}</td>
+      <td style="padding:3px 2px;text-align:left;font-weight:800;">${Number(it.totalPrice).toLocaleString('ar-EG')} ج.م</td>
     </tr>`).join('');
 
   return `
-<div style="width:${widthClass};max-width:100%;margin:0 auto;padding:2mm;font-size:11px;line-height:1.4;direction:rtl;font-family:'Cairo',Arial,sans-serif;box-sizing:border-box;">
+<div style="width:${widthVal};max-width:100%;margin:0 auto;padding:1mm 4mm 12mm 4mm;font-size:11px;line-height:1.4;direction:rtl;font-family:'Cairo',Arial,sans-serif;box-sizing:border-box;">
   <div style="text-align:center;border-bottom:1px dashed #000;padding-bottom:6px;margin-bottom:6px;">
     <h2 style="font-size:16px;font-weight:900;margin:0 0 2px 0;">${store.storeName || 'المهندس للاتصالات'}</h2>
     <p style="font-size:9.5px;margin:0;color:#333;">تليفونات - إكسسوارات - صيانة - خدمات كاش</p>
@@ -113,9 +114,9 @@ function generateInvoiceHTML(data: any, store: any): string {
   <table style="width:100%;border-collapse:collapse;margin:4px 0;font-size:10px;">
     <thead>
       <tr style="border-bottom:1.5px solid #000;">
-        <th style="text-align:right;padding:3px 0;">الصنف</th>
-        <th style="text-align:center;padding:3px 0;width:28px;">ك</th>
-        <th style="text-align:left;padding:3px 0;width:58px;">الإجمالي</th>
+        <th style="text-align:right;padding:3px 2px;">الصنف</th>
+        <th style="text-align:center;padding:3px 2px;width:28px;">ك</th>
+        <th style="text-align:left;padding:3px 2px;width:58px;">الإجمالي</th>
       </tr>
     </thead>
     <tbody>${itemRows}</tbody>
@@ -136,6 +137,9 @@ function generateInvoiceHTML(data: any, store: any): string {
   <div style="text-align:center;margin-top:10px;font-size:9.5px;border-top:1px dotted #000;padding-top:5px;color:#333;line-height:1.5;">
     ${store.receiptFooterText || 'شكراً لزيارتكم — البضاعة المباعة ترد وتستبدل خلال 14 يوماً'}
   </div>
+
+  <!-- Feed Margin to clear printer paper cutter -->
+  <div style="height:12mm;clear:both;"></div>
 </div>`;
 }
 
