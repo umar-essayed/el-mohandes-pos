@@ -328,9 +328,9 @@ export const BarcodeDesignerModal: React.FC<{ isOpen: boolean; onClose: () => vo
               onClick={handleResetToStandard}
               className="btn btn-secondary"
               style={{ padding: '0.45rem 0.8rem', fontSize: '0.78rem' }}
-              title="إعادة الأبعاد والمواضع للوضع الذهبي 42.5×25مم"
+              title="إعادة جميع مواضع وإحداثيات العناصر وأبعاد الورقة إلى الوضع القياسي الأصلي"
             >
-              <RotateCcw size={15} /> المقاس الذهبي (42.5×25مم)
+              <RotateCcw size={15} /> إعادة ضبط مواضع وأبعاد العناصر 🎯
             </button>
 
             <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: 4 }}>
@@ -418,6 +418,20 @@ export const BarcodeDesignerModal: React.FC<{ isOpen: boolean; onClose: () => vo
             {/* TAB 1: ELEMENTS CONTROL */}
             {activeTab === 'elements' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', overflowY: 'auto', maxHeight: '420px', paddingLeft: 4 }}>
+                
+                {/* Quick Reset All Elements Button */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(239, 68, 68, 0.1)', padding: '0.55rem 0.75rem', borderRadius: 10, border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                  <span style={{ fontSize: '0.78rem', color: '#fca5a5', fontWeight: 800 }}>
+                    تغيرت مواضع أو إحداثيات العناصر بالخطأ؟
+                  </span>
+                  <button
+                    onClick={handleResetToStandard}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', fontWeight: 900, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                  >
+                    <RotateCcw size={13} /> إعادة ضبط مواضع العناصر 🎯
+                  </button>
+                </div>
                 
                 {/* Store Name Controls */}
                 <div style={{ background: 'rgba(15,23,42,0.6)', padding: '0.65rem', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)' }}>

@@ -435,8 +435,9 @@ export const BarcodeDesignerPage: React.FC = () => {
             onClick={handleResetToStandard}
             className="btn btn-secondary"
             style={{ padding: '0.55rem 1rem', fontSize: '0.85rem' }}
+            title="إعادة جميع مواضع وإحداثيات العناصر وأبعاد الورقة إلى الوضع القياسي الأصلي"
           >
-            <RotateCcw size={16} /> المقاس الذهبي (42.5×25.0مم)
+            <RotateCcw size={16} /> إعادة ضبط مواضع وأبعاد العناصر 🎯
           </button>
         </div>
       </div>
@@ -528,6 +529,20 @@ export const BarcodeDesignerPage: React.FC = () => {
           {/* TAB 1: ELEMENTS CONTROL */}
           {activeTab === 'elements' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', overflowY: 'auto', maxHeight: '480px', paddingLeft: 4 }}>
+              
+              {/* Quick Reset All Elements Button */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(239, 68, 68, 0.1)', padding: '0.65rem 0.85rem', borderRadius: 12, border: '1px solid rgba(239, 68, 68, 0.25)', marginBottom: '0.2rem' }}>
+                <span style={{ fontSize: '0.8rem', color: '#fca5a5', fontWeight: 800 }}>
+                  تغيرت مواضع أو إحداثيات العناصر بالخطأ؟
+                </span>
+                <button
+                  onClick={handleResetToStandard}
+                  className="btn btn-secondary"
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem', fontWeight: 900, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <RotateCcw size={14} /> إعادة ضبط مواضع العناصر 🎯
+                </button>
+              </div>
               
               {/* Store Name Controls */}
               <div style={{ background: selectedElem === 'store' ? 'rgba(99,102,241,0.15)' : 'rgba(15,23,42,0.6)', padding: '0.75rem', borderRadius: 12, border: selectedElem === 'store' ? '1px solid #6366f1' : '1px solid rgba(255,255,255,0.06)' }}>
