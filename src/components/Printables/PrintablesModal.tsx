@@ -204,6 +204,9 @@ function generateInvoiceHTML(data: any, store: any): string {
   <div style="text-align:center;margin-top:10px;font-size:10px;border-top:1.5px dotted #000;padding-top:5px;color:#000;font-weight:800;line-height:1.4;">
     ${store.receiptFooterText || 'شكراً لزيارتكم — البضاعة المباعة ترد وتستبدل خلال 14 يوماً'}
   </div>
+
+  <!-- Physical Cutter Feed Clearance (Ensures footer & totals are 100% past the printer auto-cutter) -->
+  <div style="height:25mm;min-height:90px;clear:both;display:block;"></div>
 </div>`;
 }
 
