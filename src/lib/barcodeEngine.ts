@@ -1,5 +1,9 @@
 import { BarcodeConfig, BarcodePrintItem } from '../types';
 
+/**
+ * GOLDEN STANDARD BARCODE PRESET (42.5 mm x 25.0 mm)
+ * Technical Reference Specs
+ */
 export const DEFAULT_BARCODE_CONFIG: BarcodeConfig = {
   widthMm: 42.5,
   heightMm: 25.0,
@@ -10,26 +14,26 @@ export const DEFAULT_BARCODE_CONFIG: BarcodeConfig = {
   marginRight: 0.5,
 
   storeX: 20.6,
-  storeY: 4.8,
-  storeFontSize: 20,
+  storeY: 5.4,
+  storeFontSize: 22,
 
   nameX: 20.7,
-  nameY: 8.5,
-  nameFontSize: 18,
+  nameY: 9.2,
+  nameFontSize: 20,
 
   barcodeX: 9.7,
-  barcodeY: 10.5,
+  barcodeY: 11.1,
   scaleWidth: 2,
-  scaleHeight: 48,
+  scaleHeight: 49,
   showText: true,
 
   priceX: 4.8,
-  priceY: 20.5,
-  priceFontSize: 22,
+  priceY: 20.3,
+  priceFontSize: 23,
 
   originX: 30.5,
   originY: 23.1,
-  originFontSize: 14,
+  originFontSize: 16,
 
   showStoreName: true,
   showProductName: true,
@@ -42,7 +46,7 @@ export const DEFAULT_BARCODE_CONFIG: BarcodeConfig = {
   dpi: 203
 };
 
-const LOCAL_STORAGE_KEY = 'elmohandes_barcode_config_v2';
+const LOCAL_STORAGE_KEY = 'elmohandes_barcode_config_v3';
 
 export function loadBarcodeConfig(): BarcodeConfig {
   try {
@@ -96,7 +100,6 @@ export function canvasToMonochromeBitmap(canvas: HTMLCanvasElement): { widthByte
       const b = rgba[idx + 2];
       const a = rgba[idx + 3];
 
-      // Luminance & Alpha Threshold
       const isBlack = (a < 128) ? false : ((0.299 * r + 0.587 * g + 0.114 * b) < 180);
 
       if (isBlack) {
@@ -111,7 +114,7 @@ export function canvasToMonochromeBitmap(canvas: HTMLCanvasElement): { widthByte
 }
 
 /**
- * Compiles barcode items & TSPL config into raw binary commands payload
+ * Compiles barcode items & TSPL config into raw binary TSPL2 commands payload
  */
 export function generateTSPLStream(
   items: BarcodePrintItem[],
@@ -121,8 +124,6 @@ export function generateTSPLStream(
   const chunks: Uint8Array[] = [];
 
   const dpi = config.dpi || 203;
-  const barcodeXDots = mmToDots(config.barcodeX, dpi);
-  const barcodeYDots = mmToDots(config.barcodeY, dpi);
 
   items.forEach(item => {
     const qty = item.qty || 1;
@@ -133,21 +134,52 @@ export function generateTSPLStream(
       `CLS\n`;
     chunks.push(encoder.encode(headerStr));
 
-    // If native TSPL Barcode command is enabled
+    // 1. Store Name
+    if (config.showStoreName) {
+      const storeText = config.customStoreName || item.storeName || 'المهندس للاتصالات';
+      const x = mmToDots(config.storeX, dpi);
+      const y = mmToDots(config.storeY, dpi);
+      chunks.push(encoder.encode(`TEXT ${x},${y},"0",0,1,1,"${storeText}"\n`));
+    }
+
+    // 2. Product Name
+    if (config.showProductName) {
+      const x = mmToDots(config.nameX, dpi);
+      const y = mmToDots(config.nameY, dpi);
+      chunks.push(encoder.encode(`TEXT ${x},${y},"0",0,1,1,"${item.title}"\n`));
+    }
+
+    // 3. Barcode
     if (config.showBarcode && item.barcode) {
+      const x = mmToDots(config.barcodeX, dpi);
+      const y = mmToDots(config.barcodeY, dpi);
       const showTextVal = config.showText ? 1 : 0;
       const scaleW = config.scaleWidth || 2;
-      const scaleH = config.scaleHeight || 48;
+      const scaleH = config.scaleHeight || 49;
 
-      const barcodeCmd = `BARCODE ${barcodeXDots},${barcodeYDots},"128",${scaleH},${showTextVal},0,${scaleW},${scaleW * 2},"${item.barcode}"\n`;
+      const barcodeCmd = `BARCODE ${x},${y},"128",${scaleH},${showTextVal},0,${scaleW},${scaleW * 2},"${item.barcode}"\n`;
       chunks.push(encoder.encode(barcodeCmd));
+    }
+
+    // 4. Price
+    if (config.showPrice) {
+      const x = mmToDots(config.priceX, dpi);
+      const y = mmToDots(config.priceY, dpi);
+      chunks.push(encoder.encode(`TEXT ${x},${y},"0",0,1,1,"EGP ${item.price}"\n`));
+    }
+
+    // 5. Origin
+    if (config.showOrigin) {
+      const x = mmToDots(config.originX, dpi);
+      const y = mmToDots(config.originY, dpi);
+      const originText = config.customOriginText || item.origin || 'صنع في مصر';
+      chunks.push(encoder.encode(`TEXT ${x},${y},"0",0,1,1,"${originText}"\n`));
     }
 
     const printCmd = `PRINT ${qty},1\n`;
     chunks.push(encoder.encode(printCmd));
   });
 
-  // Calculate total length and merge Uint8Arrays
   const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
   const result = new Uint8Array(totalLength);
   let offset = 0;
@@ -160,7 +192,7 @@ export function generateTSPLStream(
 }
 
 /**
- * Direct printing via WebUSB API if browser & thermal USB printer support it
+ * Direct WebUSB Hardware Printer Sender
  */
 export async function sendToWebUSBPrinter(payload: Uint8Array): Promise<boolean> {
   if (!('usb' in navigator)) {
@@ -175,7 +207,6 @@ export async function sendToWebUSBPrinter(payload: Uint8Array): Promise<boolean>
     }
     await device.claimInterface(0);
 
-    // Find OUT endpoint
     const endpoint = device.configuration.interfaces[0].alternate.endpoints.find((e: any) => e.direction === 'out');
     const endpointNum = endpoint ? endpoint.endpointNumber : 1;
 

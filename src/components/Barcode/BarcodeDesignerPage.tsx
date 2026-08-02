@@ -26,7 +26,8 @@ import {
   Check,
   Grid,
   FileText,
-  Code
+  Code,
+  Move
 } from 'lucide-react';
 
 export const BarcodeDesignerPage: React.FC = () => {
@@ -37,8 +38,9 @@ export const BarcodeDesignerPage: React.FC = () => {
   const barcodeHelperCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const [config, setConfig] = useState<BarcodeConfig>(loadBarcodeConfig);
-  const [isLocked, setIsLocked] = useState<boolean>(true);
+  const [isLocked, setIsLocked] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'elements' | 'paper' | 'custom' | 'batch' | 'tspl'>('elements');
+  const [selectedElem, setSelectedElem] = useState<'store' | 'name' | 'barcode' | 'price' | 'origin' | null>('barcode');
 
   // Selected Items for Batch Label Printing
   const [printItems, setPrintItems] = useState<BarcodePrintItem[]>([
@@ -56,9 +58,9 @@ export const BarcodeDesignerPage: React.FC = () => {
   const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
   const [selectedPhoneId, setSelectedPhoneId] = useState<string>('');
 
-  // Dragging state for canvas elements
-  const [draggingElem, setDraggingElem] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Drag state for canvas interactive movement
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [draggedTarget, setDraggedTarget] = useState<'store' | 'name' | 'barcode' | 'price' | 'origin' | null>(null);
 
   // Ensure default custom store name is set
   useEffect(() => {
@@ -76,49 +78,45 @@ export const BarcodeDesignerPage: React.FC = () => {
   const handleResetToStandard = () => {
     setConfig(DEFAULT_BARCODE_CONFIG);
     saveBarcodeConfig(DEFAULT_BARCODE_CONFIG);
-    toast.success('تمت إعادة الضبط بنجاح 🎯', 'الأبعاد الذهبية القياسية 42.5×25 مم');
+    toast.success('تمت إعادة الضبط بنجاح 🎯', 'الأبعاد الذهبية القياسية 42.5×25.0 مم');
   };
 
-  // Render Canvas Simulation at 5x Zoom Scale
+  // Canvas Pixels-Per-Millimeter Scale Factor
+  const CANVAS_SCALE = 16; // 1mm = 16px on canvas screen preview (42.5mm = 680px, 25mm = 400px)
+
+  // Render Canvas Simulation matching physical label
   const renderCanvasPreview = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpi = config.dpi || 203;
-    const zoomScale = 5; // 5x zoom for crisp canvas display
+    const scale = CANVAS_SCALE;
+    canvas.width = Math.round(config.widthMm * scale);
+    canvas.height = Math.round(config.heightMm * scale);
 
-    const labelWidthDots = mmToDots(config.widthMm, dpi);
-    const labelHeightDots = mmToDots(config.heightMm, dpi);
-
-    canvas.width = labelWidthDots * (zoomScale / 2);
-    canvas.height = labelHeightDots * (zoomScale / 2);
-
-    const scale = (zoomScale / 2) * (dpi / 25.4); // pixels per mm on screen canvas
-
-    // White Thermal Label Paper Background
+    // 1. White Thermal Label Background
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 2mm Grid Canvas Lines
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.07)';
+    // 2. 2mm Grid Canvas Lines
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
     ctx.lineWidth = 1;
-    for (let x = 0; x < config.widthMm; x += 2) {
+    for (let x = 0; x <= config.widthMm; x += 2) {
       ctx.beginPath();
       ctx.moveTo(x * scale, 0);
       ctx.lineTo(x * scale, canvas.height);
       ctx.stroke();
     }
-    for (let y = 0; y < config.heightMm; y += 2) {
+    for (let y = 0; y <= config.heightMm; y += 2) {
       ctx.beginPath();
       ctx.moveTo(0, y * scale);
       ctx.lineTo(canvas.width, y * scale);
       ctx.stroke();
     }
 
-    // Printable Red Dashed Margin Boundary Box
-    ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+    // 3. Printable Red Dashed Margin Boundary Box
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(
@@ -130,7 +128,7 @@ export const BarcodeDesignerPage: React.FC = () => {
     ctx.setLineDash([]); // Reset line dash
 
     const sampleItem = printItems[0] || {
-      title: 'اسم المنتج التجريبي',
+      title: 'جراب ايفون 13 سيلكون حراري',
       barcode: '4000123456',
       price: 150,
       origin: config.customOriginText || 'صنع في مصر',
@@ -138,20 +136,36 @@ export const BarcodeDesignerPage: React.FC = () => {
     };
 
     ctx.fillStyle = '#000000';
-    ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
+
+    // Helper function to draw selection box for active element
+    const drawSelectionBox = (xMm: number, yMm: number, widthMm: number, heightMm: number, isSelected: boolean) => {
+      if (!isSelected || isLocked) return;
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2;
+      ctx.strokeRect((xMm * scale) - 4, (yMm * scale) - 4, (widthMm * scale) + 8, (heightMm * scale) + 8);
+      ctx.fillStyle = '#3b82f6';
+      ctx.fillRect((xMm * scale) - 6, (yMm * scale) - 6, 8, 8);
+      ctx.fillStyle = '#000000';
+    };
 
     // 1. Store Name
     if (config.showStoreName) {
       const text = config.customStoreName || sampleItem.storeName || storeSettings.storeName;
-      ctx.font = `bold ${config.storeFontSize * (zoomScale / 3)}px 'Cairo', sans-serif`;
+      ctx.textAlign = 'center';
+      const fontSizePx = Math.round(config.storeFontSize * 0.85);
+      ctx.font = `bold ${fontSizePx}px 'Cairo', sans-serif`;
       ctx.fillText(text, config.storeX * scale, config.storeY * scale);
+      drawSelectionBox(config.storeX - 10, config.storeY, 20, 2.5, selectedElem === 'store');
     }
 
     // 2. Product Name
     if (config.showProductName) {
-      ctx.font = `bold ${config.nameFontSize * (zoomScale / 3)}px 'Cairo', sans-serif`;
+      ctx.textAlign = 'center';
+      const fontSizePx = Math.round(config.nameFontSize * 0.85);
+      ctx.font = `bold ${fontSizePx}px 'Cairo', sans-serif`;
       ctx.fillText(sampleItem.title, config.nameX * scale, config.nameY * scale);
+      drawSelectionBox(config.nameX - 12, config.nameY, 24, 2.8, selectedElem === 'name');
     }
 
     // 3. Barcode CODE128 (Local Offline Rendering)
@@ -161,16 +175,20 @@ export const BarcodeDesignerPage: React.FC = () => {
         JsBarcode(helperCanvas, sampleItem.barcode, {
           format: 'CODE128',
           width: config.scaleWidth || 2,
-          height: config.scaleHeight || 45,
+          height: config.scaleHeight || 49,
           displayValue: config.showText,
           fontSize: 14,
           margin: 0,
           background: '#ffffff',
           lineColor: '#000000'
         });
-        const bcW = helperCanvas.width * (zoomScale / 3.5);
-        const bcH = helperCanvas.height * (zoomScale / 3.5);
-        ctx.drawImage(helperCanvas, (config.barcodeX * scale) - (bcW / 2), config.barcodeY * scale, bcW, bcH);
+        const bcW_mm = (helperCanvas.width / 8);
+        const bcH_mm = (helperCanvas.height / 8);
+
+        const drawX = (config.barcodeX * scale);
+        const drawY = (config.barcodeY * scale);
+        ctx.drawImage(helperCanvas, drawX, drawY, bcW_mm * scale, bcH_mm * scale);
+        drawSelectionBox(config.barcodeX, config.barcodeY, bcW_mm, bcH_mm, selectedElem === 'barcode');
       } catch (err) {
         console.warn('JsBarcode preview warning:', err);
       }
@@ -179,23 +197,91 @@ export const BarcodeDesignerPage: React.FC = () => {
     // 4. Price Text
     if (config.showPrice) {
       ctx.textAlign = 'left';
-      ctx.font = `900 ${config.priceFontSize * (zoomScale / 3)}px 'Cairo', sans-serif`;
+      const fontSizePx = Math.round(config.priceFontSize * 0.85);
+      ctx.font = `900 ${fontSizePx}px 'Cairo', sans-serif`;
       ctx.fillText(`ج.م ${sampleItem.price.toLocaleString('ar-EG')}`, config.priceX * scale, config.priceY * scale);
+      drawSelectionBox(config.priceX, config.priceY, 12, 3, selectedElem === 'price');
     }
 
     // 5. Origin Text
     if (config.showOrigin) {
       ctx.textAlign = 'right';
-      ctx.font = `600 ${config.originFontSize * (zoomScale / 3)}px 'Cairo', sans-serif`;
+      const fontSizePx = Math.round(config.originFontSize * 0.85);
+      ctx.font = `600 ${fontSizePx}px 'Cairo', sans-serif`;
       ctx.fillText(config.customOriginText || sampleItem.origin || 'صنع في مصر', config.originX * scale, config.originY * scale);
+      drawSelectionBox(config.originX - 10, config.originY, 10, 2.5, selectedElem === 'origin');
     }
   };
 
   useEffect(() => {
     renderCanvasPreview();
-  }, [config, printItems]);
+  }, [config, printItems, selectedElem, isLocked]);
 
-  // Add Item to Print Queue
+  // Handle Mouse Click / Drag on Canvas
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isLocked) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const clickX_px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const clickY_px = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const clickX_mm = clickX_px / CANVAS_SCALE;
+    const clickY_mm = clickY_px / CANVAS_SCALE;
+
+    // Determine clicked element based on proximity
+    const targets: { name: 'store' | 'name' | 'barcode' | 'price' | 'origin'; x: number; y: number }[] = [
+      { name: 'store', x: config.storeX, y: config.storeY },
+      { name: 'name', x: config.nameX, y: config.nameY },
+      { name: 'barcode', x: config.barcodeX + 10, y: config.barcodeY + 4 },
+      { name: 'price', x: config.priceX + 5, y: config.priceY + 2 },
+      { name: 'origin', x: config.originX - 5, y: config.originY + 2 }
+    ];
+
+    let closest = targets[0];
+    let minDistance = Math.hypot(clickX_mm - targets[0].x, clickY_mm - targets[0].y);
+
+    for (let i = 1; i < targets.length; i++) {
+      const dist = Math.hypot(clickX_mm - targets[i].x, clickY_mm - targets[i].y);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closest = targets[i];
+      }
+    }
+
+    if (minDistance < 15) {
+      setSelectedElem(closest.name);
+      setDraggedTarget(closest.name);
+      setIsDragging(true);
+      setActiveTab('elements');
+    }
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDragging || !draggedTarget || isLocked) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const currentX_px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const currentY_px = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    const newX_mm = Math.max(0, Math.min(config.widthMm, Math.round((currentX_px / CANVAS_SCALE) * 10) / 10));
+    const newY_mm = Math.max(0, Math.min(config.heightMm, Math.round((currentY_px / CANVAS_SCALE) * 10) / 10));
+
+    if (draggedTarget === 'store') handleUpdateConfig({ storeX: newX_mm, storeY: newY_mm });
+    if (draggedTarget === 'name') handleUpdateConfig({ nameX: newX_mm, nameY: newY_mm });
+    if (draggedTarget === 'barcode') handleUpdateConfig({ barcodeX: newX_mm, barcodeY: newY_mm });
+    if (draggedTarget === 'price') handleUpdateConfig({ priceX: newX_mm, priceY: newY_mm });
+    if (draggedTarget === 'origin') handleUpdateConfig({ originX: newX_mm, originY: newY_mm });
+  };
+
+  const handleCanvasMouseUp = () => {
+    setIsDragging(false);
+    setDraggedTarget(null);
+  };
+
+  // Add Item to Batch Queue
   const handleAddInventoryToQueue = () => {
     if (!selectedInventoryId) return;
     const item = inventory.find(i => i.id === selectedInventoryId);
@@ -254,12 +340,12 @@ export const BarcodeDesignerPage: React.FC = () => {
       await sendToWebUSBPrinter(payload);
       toast.success('تم إرسال أمر الطباعة المباشر ⚡', 'تم نقل الأوامر لرأس الطابعة الحرارية');
     } catch (err: any) {
-      toast.info('سيتم فتح نافذة المعاينة والطباعة 🖨️', 'WebUSB غير متاح، يتم التحويل للطباعة المباشرة');
+      toast.info('سيتم فتح نافذة الطباعة الحرارية السلسة 🖨️', 'يتم التحويل للطباعة المباشرة');
       handlePrintBrowserThermal();
     }
   };
 
-  // Reliable Thermal Label Browser Printing Engine (Local Data URL SVG / Canvas)
+  // Seamless 1-to-1 Browser Thermal Printing Engine
   const handlePrintBrowserThermal = () => {
     if (printItems.length === 0) {
       toast.warning('أضف منتجات أولاً للطباعة');
@@ -272,7 +358,6 @@ export const BarcodeDesignerPage: React.FC = () => {
       return;
     }
 
-    // Generate local Data URLs for barcodes
     const renderItemHtml = (item: BarcodePrintItem) => {
       let barcodeImgHtml = '';
       if (config.showBarcode && item.barcode) {
@@ -281,7 +366,7 @@ export const BarcodeDesignerPage: React.FC = () => {
           JsBarcode(helperCanvas, item.barcode, {
             format: 'CODE128',
             width: config.scaleWidth || 2,
-            height: config.scaleHeight || 45,
+            height: config.scaleHeight || 49,
             displayValue: config.showText,
             fontSize: 14,
             margin: 0,
@@ -289,21 +374,19 @@ export const BarcodeDesignerPage: React.FC = () => {
             lineColor: '#000000'
           });
           const dataUrl = helperCanvas.toDataURL('image/png');
-          barcodeImgHtml = `<img src="${dataUrl}" style="max-width: 95%; max-height: 14mm; object-fit: contain; margin: 1px 0;" />`;
+          barcodeImgHtml = `<img src="${dataUrl}" style="position: absolute; left: ${config.barcodeX}mm; top: ${config.barcodeY}mm; max-height: 12mm; object-fit: contain;" />`;
         } catch {
-          barcodeImgHtml = `<div style="font-family: monospace; font-weight: bold;">*${item.barcode}*</div>`;
+          barcodeImgHtml = `<div style="position: absolute; left: ${config.barcodeX}mm; top: ${config.barcodeY}mm; font-family: monospace; font-weight: bold;">*${item.barcode}*</div>`;
         }
       }
 
       return `
-        <div className="label-page">
-          ${config.showStoreName ? `<div className="store-title">${config.customStoreName || item.storeName || storeSettings.storeName}</div>` : ''}
-          ${config.showProductName ? `<div className="product-title">${item.title}</div>` : ''}
+        <div class="label-page">
+          ${config.showStoreName ? `<div style="position: absolute; left: 0; right: 0; top: ${config.storeY}mm; text-align: center; font-size: ${config.storeFontSize * 0.45}pt; font-weight: bold;">${config.customStoreName || item.storeName || storeSettings.storeName}</div>` : ''}
+          ${config.showProductName ? `<div style="position: absolute; left: 0; right: 0; top: ${config.nameY}mm; text-align: center; font-size: ${config.nameFontSize * 0.45}pt; font-weight: bold; padding: 0 1mm; overflow: hidden; white-space: nowrap;">${item.title}</div>` : ''}
           ${barcodeImgHtml}
-          <div className="label-footer">
-            ${config.showPrice ? `<span className="price-tag">ج.م ${item.price.toLocaleString('ar-EG')}</span>` : ''}
-            ${config.showOrigin ? `<span className="origin-tag">${config.customOriginText || item.origin || 'صنع في مصر'}</span>` : ''}
-          </div>
+          ${config.showPrice ? `<div style="position: absolute; left: ${config.priceX}mm; top: ${config.priceY}mm; font-size: ${config.priceFontSize * 0.45}pt; font-weight: 900;">ج.م ${item.price.toLocaleString('ar-EG')}</div>` : ''}
+          ${config.showOrigin ? `<div style="position: absolute; right: ${config.widthMm - config.originX}mm; top: ${config.originY}mm; font-size: ${config.originFontSize * 0.45}pt; font-weight: 600; color: #333;">${config.customOriginText || item.origin || 'صنع في مصر'}</div>` : ''}
         </div>
       `;
     };
@@ -341,56 +424,16 @@ export const BarcodeDesignerPage: React.FC = () => {
             background: #fff;
             color: #000;
             direction: rtl;
-            text-align: center;
             -webkit-print-color-adjust: exact;
           }
 
           .label-page {
             width: ${config.widthMm}mm;
             height: ${config.heightMm}mm;
-            padding: ${config.marginTop}mm ${config.marginRight}mm ${config.marginBottom}mm ${config.marginLeft}mm;
             page-break-after: always;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            align-items: center;
+            position: relative;
             overflow: hidden;
             background: #fff;
-          }
-
-          .store-title {
-            font-size: ${config.storeFontSize / 2}px;
-            font-weight: 700;
-            line-height: 1;
-            white-space: nowrap;
-            overflow: hidden;
-          }
-
-          .product-title {
-            font-size: ${config.nameFontSize / 2}px;
-            font-weight: 800;
-            line-height: 1.1;
-            max-height: 2.2em;
-            overflow: hidden;
-          }
-
-          .label-footer {
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0 1mm;
-          }
-
-          .price-tag {
-            font-size: ${config.priceFontSize / 2}px;
-            font-weight: 900;
-          }
-
-          .origin-tag {
-            font-size: ${config.originFontSize / 2}px;
-            font-weight: 600;
-            color: #333;
           }
         </style>
       </head>
@@ -411,11 +454,9 @@ export const BarcodeDesignerPage: React.FC = () => {
     printWin.document.close();
   };
 
-  // Generate TSPL Code Text for Preview/Copy
+  // Generate TSPL Code String
   const generateTSPLTextString = (): string => {
     const dpi = config.dpi || 203;
-    const barcodeXDots = mmToDots(config.barcodeX, dpi);
-    const barcodeYDots = mmToDots(config.barcodeY, dpi);
 
     let result = '';
     printItems.forEach(item => {
@@ -424,16 +465,19 @@ export const BarcodeDesignerPage: React.FC = () => {
       result += `DIRECTION 1\n`;
       result += `CLS\n`;
       if (config.showStoreName) {
-        result += `TEXT 170,30,"0",0,1,1,"${config.customStoreName || item.storeName || storeSettings.storeName}"\n`;
+        result += `TEXT ${mmToDots(config.storeX, dpi)},${mmToDots(config.storeY, dpi)},"0",0,1,1,"${config.customStoreName || item.storeName || storeSettings.storeName}"\n`;
       }
       if (config.showProductName) {
-        result += `TEXT 170,60,"0",0,1,1,"${item.title}"\n`;
+        result += `TEXT ${mmToDots(config.nameX, dpi)},${mmToDots(config.nameY, dpi)},"0",0,1,1,"${item.title}"\n`;
       }
       if (config.showBarcode && item.barcode) {
-        result += `BARCODE ${barcodeXDots},${barcodeYDots},"128",${config.scaleHeight || 48},${config.showText ? 1 : 0},0,${config.scaleWidth || 2},${(config.scaleWidth || 2) * 2},"${item.barcode}"\n`;
+        result += `BARCODE ${mmToDots(config.barcodeX, dpi)},${mmToDots(config.barcodeY, dpi)},"128",${config.scaleHeight || 49},${config.showText ? 1 : 0},0,${config.scaleWidth || 2},${(config.scaleWidth || 2) * 2},"${item.barcode}"\n`;
       }
       if (config.showPrice) {
-        result += `TEXT 40,160,"0",0,1.2,1.2,"EGP ${item.price}"\n`;
+        result += `TEXT ${mmToDots(config.priceX, dpi)},${mmToDots(config.priceY, dpi)},"0",0,1.2,1.2,"EGP ${item.price}"\n`;
+      }
+      if (config.showOrigin) {
+        result += `TEXT ${mmToDots(config.originX, dpi)},${mmToDots(config.originY, dpi)},"0",0,1,1,"${config.customOriginText || item.origin || 'صنع في مصر'}"\n`;
       }
       result += `PRINT ${item.qty || 1},1\n\n`;
     });
@@ -447,18 +491,30 @@ export const BarcodeDesignerPage: React.FC = () => {
     toast.success('تم نسخ أوامر TSPL إلى الحافظة 📋');
   };
 
+  const handleDownloadTSPLFile = () => {
+    const payload = generateTSPLStream(printItems, config);
+    const blob = new Blob([payload], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `elmohandes-barcodes-${Date.now()}.tspl`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('تم تحميل ملف الأوامر الخام (.tspl) 📥');
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', width: '100%' }}>
       <canvas ref={barcodeHelperCanvasRef} style={{ display: 'none' }} />
 
-      {/* Top Main Page Header */}
+      {/* Top Page Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', background: 'var(--bg-card)', padding: '1.2rem', borderRadius: 16, border: '1px solid var(--border-color)' }}>
         <div>
           <h2 style={{ fontSize: '1.35rem', fontWeight: 900, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Printer color="#fbbf24" size={24} /> مصمم ومحرك طباعة ملصقات الباركود الحرارية (Universal TSPL Engine)
+            <Printer color="#fbbf24" size={24} /> مصمم ومحرك طباعة ملصقات الباركود الحرارية (TSPL 2.0 Engine)
           </h2>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 2 }}>
-            المقاس الذهبي القياسي: <strong>42.5 × 25 مم</strong> | دقة 203 DPI | طباعة حرارية طباعة مباشرة وتفاعلية
+            الأبعاد الافتراضية الذهبية: <strong>42.5 × 25.0 مم</strong> | دقة 203 DPI | تحريك تفاعلي بالسحب والإفلات
           </p>
         </div>
 
@@ -469,7 +525,7 @@ export const BarcodeDesignerPage: React.FC = () => {
             style={{ padding: '0.55rem 1rem', fontSize: '0.85rem' }}
           >
             {isLocked ? <Lock size={16} color="#fda4af" /> : <Unlock size={16} color="#10b981" />}
-            <span>{isLocked ? 'قفل الحركة 🔒' : 'تعديل حُر 🔓'}</span>
+            <span>{isLocked ? 'قفل الحركة 🔒' : 'تعديل وسحب حُر 🔓'}</span>
           </button>
 
           <button
@@ -477,7 +533,7 @@ export const BarcodeDesignerPage: React.FC = () => {
             className="btn btn-secondary"
             style={{ padding: '0.55rem 1rem', fontSize: '0.85rem' }}
           >
-            <RotateCcw size={16} /> المقاس الذهبي (42.5×25مم)
+            <RotateCcw size={16} /> المقاس الذهبي (42.5×25.0مم)
           </button>
         </div>
       </div>
@@ -489,15 +545,22 @@ export const BarcodeDesignerPage: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', background: 'var(--bg-card)', borderRadius: 16, padding: '1.2rem', border: '1px solid var(--border-color)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Eye size={18} /> المعاينة الحية البصرية للملصق (تكبير 5x)
+              <Eye size={18} /> المعاينة البصرية للملصق (42.5 × 25.0 مم)
             </span>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              {config.widthMm} مم × {config.heightMm} مم ({mmToDots(config.widthMm)}×{mmToDots(config.heightMm)} Dot)
+              {isLocked ? '🔒 وضع القفل' : '🖐️ اضغط واسحب أي عنصر للتحريك'}
             </span>
           </div>
 
-          <div style={{ background: '#0b0f19', borderRadius: 12, padding: '2rem 1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', border: '1px dashed rgba(255,255,255,0.15)', minHeight: '260px' }}>
-            <canvas ref={canvasRef} style={{ boxShadow: '0 12px 36px rgba(0,0,0,0.85)', borderRadius: 4, cursor: isLocked ? 'default' : 'move' }} />
+          <div style={{ background: '#0b0f19', borderRadius: 12, padding: '2rem 1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', border: '1px dashed rgba(255,255,255,0.15)', minHeight: '300px' }}>
+            <canvas
+              ref={canvasRef}
+              onMouseDown={handleCanvasMouseDown}
+              onMouseMove={handleCanvasMouseMove}
+              onMouseUp={handleCanvasMouseUp}
+              onMouseLeave={handleCanvasMouseUp}
+              style={{ boxShadow: '0 12px 36px rgba(0,0,0,0.85)', borderRadius: 4, cursor: isLocked ? 'default' : 'move' }}
+            />
           </div>
 
           {/* Action Buttons */}
@@ -518,12 +581,20 @@ export const BarcodeDesignerPage: React.FC = () => {
               <Printer size={20} /> طباعة حرارية (معاينة) 🖨️
             </button>
           </div>
+
+          <button
+            className="btn btn-secondary"
+            onClick={handleDownloadTSPLFile}
+            style={{ padding: '0.5rem', fontSize: '0.8rem', width: '100%' }}
+          >
+            <Download size={14} /> تحميل ملف الأوامر الخام (.tspl)
+          </button>
         </div>
 
         {/* Right Column: Inspector Controls */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', background: 'var(--bg-card)', borderRadius: 16, padding: '1.2rem', border: '1px solid var(--border-color)' }}>
           
-          {/* Tabs */}
+          {/* Tabs Navigation */}
           <div style={{ display: 'flex', gap: '0.4rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.6rem', flexWrap: 'wrap' }}>
             {[
               { id: 'elements', label: '🎛️ تحكم العناصر' },
@@ -556,9 +627,9 @@ export const BarcodeDesignerPage: React.FC = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', overflowY: 'auto', maxHeight: '480px', paddingLeft: 4 }}>
               
               {/* Store Name Controls */}
-              <div style={{ background: 'rgba(15,23,42,0.6)', padding: '0.75rem', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ background: selectedElem === 'store' ? 'rgba(99,102,241,0.15)' : 'rgba(15,23,42,0.6)', padding: '0.75rem', borderRadius: 12, border: selectedElem === 'store' ? '1px solid #6366f1' : '1px solid rgba(255,255,255,0.06)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff' }}>
+                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff', cursor: 'pointer' }} onClick={() => setSelectedElem('store')}>
                     <input type="checkbox" checked={config.showStoreName} onChange={e => handleUpdateConfig({ showStoreName: e.target.checked })} style={{ marginLeft: 6 }} />
                     اسم المتجر / المحل
                   </label>
@@ -567,15 +638,15 @@ export const BarcodeDesignerPage: React.FC = () => {
                 {config.showStoreName && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع افقي X</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع افقي X (mm)</label>
                       <input type="number" step="0.1" className="input-field" value={config.storeX} onChange={e => handleUpdateConfig({ storeX: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع رأسي Y</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع رأسي Y (mm)</label>
                       <input type="number" step="0.1" className="input-field" value={config.storeY} onChange={e => handleUpdateConfig({ storeY: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>حجم الخط</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>حجم الخط (pt)</label>
                       <input type="number" className="input-field" value={config.storeFontSize} onChange={e => handleUpdateConfig({ storeFontSize: Number(e.target.value) })} />
                     </div>
                   </div>
@@ -583,9 +654,9 @@ export const BarcodeDesignerPage: React.FC = () => {
               </div>
 
               {/* Product Name Controls */}
-              <div style={{ background: 'rgba(15,23,42,0.6)', padding: '0.75rem', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ background: selectedElem === 'name' ? 'rgba(99,102,241,0.15)' : 'rgba(15,23,42,0.6)', padding: '0.75rem', borderRadius: 12, border: selectedElem === 'name' ? '1px solid #6366f1' : '1px solid rgba(255,255,255,0.06)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff' }}>
+                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff', cursor: 'pointer' }} onClick={() => setSelectedElem('name')}>
                     <input type="checkbox" checked={config.showProductName} onChange={e => handleUpdateConfig({ showProductName: e.target.checked })} style={{ marginLeft: 6 }} />
                     اسم الصنف / المنتج
                   </label>
@@ -594,15 +665,15 @@ export const BarcodeDesignerPage: React.FC = () => {
                 {config.showProductName && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع افقي X</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع افقي X (mm)</label>
                       <input type="number" step="0.1" className="input-field" value={config.nameX} onChange={e => handleUpdateConfig({ nameX: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع رأسي Y</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع رأسي Y (mm)</label>
                       <input type="number" step="0.1" className="input-field" value={config.nameY} onChange={e => handleUpdateConfig({ nameY: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>حجم الخط</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>حجم الخط (pt)</label>
                       <input type="number" className="input-field" value={config.nameFontSize} onChange={e => handleUpdateConfig({ nameFontSize: Number(e.target.value) })} />
                     </div>
                   </div>
@@ -610,9 +681,9 @@ export const BarcodeDesignerPage: React.FC = () => {
               </div>
 
               {/* Barcode Controls */}
-              <div style={{ background: 'rgba(15,23,42,0.6)', padding: '0.75rem', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ background: selectedElem === 'barcode' ? 'rgba(99,102,241,0.15)' : 'rgba(15,23,42,0.6)', padding: '0.75rem', borderRadius: 12, border: selectedElem === 'barcode' ? '1px solid #6366f1' : '1px solid rgba(255,255,255,0.06)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff' }}>
+                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff', cursor: 'pointer' }} onClick={() => setSelectedElem('barcode')}>
                     <input type="checkbox" checked={config.showBarcode} onChange={e => handleUpdateConfig({ showBarcode: e.target.checked })} style={{ marginLeft: 6 }} />
                     شريط الباركود (CODE128)
                   </label>
@@ -624,19 +695,19 @@ export const BarcodeDesignerPage: React.FC = () => {
                 {config.showBarcode && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.4rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>موضع X</label>
+                      <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>موضع X (mm)</label>
                       <input type="number" step="0.1" className="input-field" value={config.barcodeX} onChange={e => handleUpdateConfig({ barcodeX: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>موضع Y</label>
+                      <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>موضع Y (mm)</label>
                       <input type="number" step="0.1" className="input-field" value={config.barcodeY} onChange={e => handleUpdateConfig({ barcodeY: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>سمك الخط</label>
+                      <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>سمك الخط (Dot)</label>
                       <input type="number" className="input-field" value={config.scaleWidth} onChange={e => handleUpdateConfig({ scaleWidth: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>الارتفاع</label>
+                      <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>الارتفاع (Dot)</label>
                       <input type="number" className="input-field" value={config.scaleHeight} onChange={e => handleUpdateConfig({ scaleHeight: Number(e.target.value) })} />
                     </div>
                   </div>
@@ -644,9 +715,9 @@ export const BarcodeDesignerPage: React.FC = () => {
               </div>
 
               {/* Price Controls */}
-              <div style={{ background: 'rgba(15,23,42,0.6)', padding: '0.75rem', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ background: selectedElem === 'price' ? 'rgba(99,102,241,0.15)' : 'rgba(15,23,42,0.6)', padding: '0.75rem', borderRadius: 12, border: selectedElem === 'price' ? '1px solid #6366f1' : '1px solid rgba(255,255,255,0.06)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff' }}>
+                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff', cursor: 'pointer' }} onClick={() => setSelectedElem('price')}>
                     <input type="checkbox" checked={config.showPrice} onChange={e => handleUpdateConfig({ showPrice: e.target.checked })} style={{ marginLeft: 6 }} />
                     سعر البيع
                   </label>
@@ -655,15 +726,15 @@ export const BarcodeDesignerPage: React.FC = () => {
                 {config.showPrice && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع افقي X</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع افقي X (mm)</label>
                       <input type="number" step="0.1" className="input-field" value={config.priceX} onChange={e => handleUpdateConfig({ priceX: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع رأسي Y</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع رأسي Y (mm)</label>
                       <input type="number" step="0.1" className="input-field" value={config.priceY} onChange={e => handleUpdateConfig({ priceY: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>حجم الخط</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>حجم الخط (pt)</label>
                       <input type="number" className="input-field" value={config.priceFontSize} onChange={e => handleUpdateConfig({ priceFontSize: Number(e.target.value) })} />
                     </div>
                   </div>
@@ -671,9 +742,9 @@ export const BarcodeDesignerPage: React.FC = () => {
               </div>
 
               {/* Origin Controls */}
-              <div style={{ background: 'rgba(15,23,42,0.6)', padding: '0.75rem', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ background: selectedElem === 'origin' ? 'rgba(99,102,241,0.15)' : 'rgba(15,23,42,0.6)', padding: '0.75rem', borderRadius: 12, border: selectedElem === 'origin' ? '1px solid #6366f1' : '1px solid rgba(255,255,255,0.06)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff' }}>
+                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff', cursor: 'pointer' }} onClick={() => setSelectedElem('origin')}>
                     <input type="checkbox" checked={config.showOrigin} onChange={e => handleUpdateConfig({ showOrigin: e.target.checked })} style={{ marginLeft: 6 }} />
                     بلد المنشأ / الملاحظة
                   </label>
@@ -682,15 +753,15 @@ export const BarcodeDesignerPage: React.FC = () => {
                 {config.showOrigin && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع افقي X</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع افقي X (mm)</label>
                       <input type="number" step="0.1" className="input-field" value={config.originX} onChange={e => handleUpdateConfig({ originX: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع رأسي Y</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>موضع رأسي Y (mm)</label>
                       <input type="number" step="0.1" className="input-field" value={config.originY} onChange={e => handleUpdateConfig({ originY: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>حجم الخط</label>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>حجم الخط (pt)</label>
                       <input type="number" className="input-field" value={config.originFontSize} onChange={e => handleUpdateConfig({ originFontSize: Number(e.target.value) })} />
                     </div>
                   </div>
@@ -831,7 +902,7 @@ export const BarcodeDesignerPage: React.FC = () => {
               </div>
               <textarea
                 className="input-field"
-                style={{ fontFamily: 'monospace', fontSize: '0.8rem', flex: 1, minHeight: '220px', direction: 'ltr', background: '#0b0f19', color: '#34d399' }}
+                style={{ fontFamily: 'monospace', fontSize: '0.8rem', flex: 1, minHeight: '260px', direction: 'ltr', background: '#0b0f19', color: '#34d399' }}
                 value={generateTSPLTextString()}
                 readOnly
               />
