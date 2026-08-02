@@ -125,27 +125,32 @@ export function generateZPLCode(params: LabelParams, config?: any): string {
   // Canvas size in dots: 2×1 inch @ 8dpmm = 406×203
   const W = 406;
 
-  // Map config (mm) to dots, with sensible defaults
-  const storeY    = config ? mm2d(config.storeY    ?? 1.8)  : 15;
+  // ── Text positions: config values are in mm → convert to 8dpmm dots ──
+  const storeY    = config ? mm2d(config.storeY   ?? 1.8) : 15;
   const storeFsz  = config ? Math.round((config.storeFontSize  ?? 20) * 0.8) : 22;
-  const nameY     = config ? mm2d(config.nameY     ?? 5.2)  : 50;
+  const nameY     = config ? mm2d(config.nameY    ?? 5.2) : 50;
   const nameFsz   = config ? Math.round((config.nameFontSize   ?? 16) * 0.8) : 16;
-  const barcodeX  = config
-    ? mm2d(config.barcodeX ?? 9.7)
-    : calculateBarcodeXOffset(barcodeVal, 2, W);
-  const barcodeY  = config ? mm2d(config.barcodeY  ?? 9.0)  : 75;
-  const bcHeight  = config ? mm2d(config.scaleHeight ?? 45 / DPMM) : 45;
-  const bcModW    = config?.scaleWidth ?? 2;
-  const priceY    = config ? mm2d(config.priceY    ?? 18.5) : 155;
+  const priceY    = config ? mm2d(config.priceY   ?? 18.5) : 155;
   const priceFsz  = config ? Math.round((config.priceFontSize  ?? 18) * 0.8) : 18;
 
-  // Build ^GF commands for Arabic text elements
-  const storeGF   = textToGFCommand(shopName,    0, storeY,  storeFsz,  true,  W, 'center');
-  const nameGF    = textToGFCommand(productName, 0, nameY,   nameFsz,   true,  W, 'center');
-  const priceGF   = textToGFCommand(priceText,   0, priceY,  priceFsz,  true,  W, 'center');
+  // ── Barcode params ──
+  // scaleWidth is already in dots (module width, typically 1-3)
+  const bcModW    = Math.min(config?.scaleWidth ?? 2, 3);
+  // scaleHeight is in pixels at 203dpi ≈ same as dots at 8dpmm — do NOT multiply by DPMM!
+  const rawBcH    = config?.scaleHeight ?? 45;
+  const bcHeight  = Math.min(rawBcH, 60); // cap at 60 dots so it fits (label is 203 dots)
+  // barcodeY: config is in mm
+  const barcodeY  = config ? mm2d(config.barcodeY ?? 9.0) : 75;
+  // Always auto-center barcode horizontally using the formula
+  const barcodeX  = calculateBarcodeXOffset(barcodeVal, bcModW, W);
 
-  // Barcode digits Y (just below barcode)
-  const digitsY   = barcodeY + bcHeight + 4;
+  // Build ^GF commands for Arabic text elements
+  const storeGF  = textToGFCommand(shopName,    0, storeY, storeFsz, true, W, 'center');
+  const nameGF   = textToGFCommand(productName, 0, nameY,  nameFsz,  true, W, 'center');
+  const priceGF  = textToGFCommand(priceText,   0, priceY, priceFsz, true, W, 'center');
+
+  // Barcode digits Y = just below barcode bottom edge
+  const digitsY  = barcodeY + bcHeight + 4;
 
   return (
 `^XA
