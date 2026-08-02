@@ -175,7 +175,7 @@ export const BarcodeDesignerPage: React.FC = () => {
         JsBarcode(helperCanvas, sampleItem.barcode, {
           format: 'CODE128',
           width: config.scaleWidth || 2,
-          height: config.scaleHeight || 49,
+          height: config.scaleHeight || 40,
           displayValue: config.showText,
           fontSize: 14,
           margin: 0,
@@ -185,10 +185,10 @@ export const BarcodeDesignerPage: React.FC = () => {
         const bcW_mm = (helperCanvas.width / 8);
         const bcH_mm = (helperCanvas.height / 8);
 
-        const drawX = (config.barcodeX * scale);
+        const drawX = (config.barcodeX * scale) - ((bcW_mm * scale) / 2);
         const drawY = (config.barcodeY * scale);
         ctx.drawImage(helperCanvas, drawX, drawY, bcW_mm * scale, bcH_mm * scale);
-        drawSelectionBox(config.barcodeX, config.barcodeY, bcW_mm, bcH_mm, selectedElem === 'barcode');
+        drawSelectionBox(config.barcodeX - (bcW_mm / 2), config.barcodeY, bcW_mm, bcH_mm, selectedElem === 'barcode');
       } catch (err) {
         console.warn('JsBarcode preview warning:', err);
       }

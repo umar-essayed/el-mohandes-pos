@@ -207,162 +207,89 @@ export const PrintablesModal: React.FC = () => {
             {/* TYPE 3: THERMAL BARCODE LABELS (42.5mm x 25.0mm) */}
             {type === 'BARCODE_LABELS' && (() => {
               const config = data.config || DEFAULT_BARCODE_CONFIG;
+              const widthMm = config.widthMm || 42.5;
+              const heightMm = config.heightMm || 25.0;
+
               return (
                 <div style={{ background: 'transparent', color: '#000', padding: 0 }}>
                   <style>{`
                     @media print {
                       @page {
-                        size: ${config.widthMm}mm ${config.heightMm}mm;
+                        size: ${widthMm}mm ${heightMm}mm;
                         margin: 0;
                       }
                       html, body {
                         margin: 0 !important;
                         padding: 0 !important;
                         background: #ffffff !important;
+                        width: ${widthMm}mm !important;
+                        height: ${heightMm}mm !important;
                       }
                       .print-area.barcode-print-mode {
                         position: absolute !important;
                         top: 0 !important;
                         left: 0 !important;
-                        width: ${config.widthMm}mm !important;
+                        width: ${widthMm}mm !important;
+                        height: ${heightMm}mm !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         background: #ffffff !important;
                       }
                       .barcode-print-label-item {
-                        width: ${config.widthMm}mm !important;
-                        height: ${config.heightMm}mm !important;
+                        width: ${widthMm}mm !important;
+                        height: ${heightMm}mm !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         border: none !important;
                         box-shadow: none !important;
                         page-break-after: always !important;
                         break-after: page !important;
+                        overflow: hidden !important;
                       }
                       .barcode-print-label-item:last-child {
                         page-break-after: avoid !important;
                         break-after: avoid !important;
                       }
+                      .barcode-print-label-item img {
+                        width: ${widthMm}mm !important;
+                        height: ${heightMm}mm !important;
+                        display: block !important;
+                        object-fit: fill !important;
+                      }
                     }
                   `}</style>
                   {data.items.map((item: any, itemIdx: number) => {
                     const copies = item.qty || 1;
-                    const barcodeText = item.barcode || item.id || '4000123456';
-                    const barcodeDataUrl = generateBarcodeDataUrl(barcodeText, config);
+                    const labelDataUrl = generateBarcodeDataUrl(item, config, storeSettings);
 
                     return Array.from({ length: copies }).map((_, qIdx) => (
                       <div
                         key={`${item.id}-${itemIdx}-${qIdx}`}
                         className="barcode-print-label-item"
                         style={{
-                          width: `${config.widthMm}mm`,
-                          height: `${config.heightMm}mm`,
+                          width: `${widthMm}mm`,
+                          height: `${heightMm}mm`,
                           position: 'relative',
                           overflow: 'hidden',
                           background: '#ffffff',
                           color: '#000000',
                           boxSizing: 'border-box',
                           margin: '0 auto 12px auto',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                          borderRadius: 2,
-                          fontFamily: 'Cairo, sans-serif'
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                          borderRadius: 2
                         }}
                       >
-                        {/* 1. Store Name */}
-                        {config.showStoreName && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: `${config.storeX}mm`,
-                              top: `${config.storeY}mm`,
-                              transform: 'translateX(-50%)',
-                              fontSize: `${config.storeFontSize * 0.35}pt`,
-                              fontWeight: 'bold',
-                              lineHeight: 1,
-                              whiteSpace: 'nowrap',
-                              color: '#000'
-                            }}
-                          >
-                            {config.customStoreName || item.storeName || storeSettings.storeName}
-                          </div>
-                        )}
-
-                        {/* 2. Product Name */}
-                        {config.showProductName && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: `${config.nameX}mm`,
-                              top: `${config.nameY}mm`,
-                              transform: 'translateX(-50%)',
-                              fontSize: `${config.nameFontSize * 0.35}pt`,
-                              fontWeight: 'bold',
-                              lineHeight: 1.1,
-                              whiteSpace: 'nowrap',
-                              color: '#000',
-                              maxWidth: `${config.widthMm - 2}mm`,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis'
-                            }}
-                          >
-                            {item.title}
-                          </div>
-                        )}
-
-                        {/* 3. Barcode CODE128 */}
-                        {config.showBarcode && barcodeDataUrl && (
-                          <img
-                            src={barcodeDataUrl}
-                            alt={barcodeText}
-                            style={{
-                              position: 'absolute',
-                              left: `${config.barcodeX}mm`,
-                              top: `${config.barcodeY}mm`,
-                              transform: 'translateX(-50%)',
-                              height: `${(config.scaleHeight || 45) * 0.22}mm`,
-                              maxWidth: `${config.widthMm - 2}mm`,
-                              objectFit: 'contain',
-                              imageRendering: 'pixelated'
-                            }}
-                          />
-                        )}
-
-                        {/* 4. Price */}
-                        {config.showPrice && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: `${config.priceX}mm`,
-                              top: `${config.priceY}mm`,
-                              fontSize: `${config.priceFontSize * 0.35}pt`,
-                              fontWeight: 900,
-                              lineHeight: 1,
-                              whiteSpace: 'nowrap',
-                              color: '#000'
-                            }}
-                          >
-                            ج.م {Number(item.price || 0).toLocaleString('ar-EG')}
-                          </div>
-                        )}
-
-                        {/* 5. Origin */}
-                        {config.showOrigin && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: `${config.originX}mm`,
-                              top: `${config.originY}mm`,
-                              transform: 'translateX(-100%)',
-                              fontSize: `${config.originFontSize * 0.35}pt`,
-                              fontWeight: 600,
-                              lineHeight: 1,
-                              whiteSpace: 'nowrap',
-                              color: '#333'
-                            }}
-                          >
-                            {config.customOriginText || item.origin || 'صنع في مصر'}
-                          </div>
-                        )}
+                        <img
+                          src={labelDataUrl}
+                          alt={item.title}
+                          style={{
+                            width: `${widthMm}mm`,
+                            height: `${heightMm}mm`,
+                            display: 'block',
+                            objectFit: 'fill',
+                            imageRendering: 'pixelated'
+                          }}
+                        />
                       </div>
                     ));
                   })}
