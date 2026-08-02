@@ -39,7 +39,7 @@ export const BarcodeDesignerPage: React.FC = () => {
 
   const [config, setConfig] = useState<BarcodeConfig>(loadBarcodeConfig);
   const [isLocked, setIsLocked] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'elements' | 'paper' | 'custom' | 'batch' | 'tspl'>('elements');
+  const [activeTab, setActiveTab] = useState<'elements' | 'paper' | 'custom' | 'batch' | 'tspl'>('batch');
   const [selectedElem, setSelectedElem] = useState<'store' | 'name' | 'barcode' | 'price' | 'origin' | null>('barcode');
 
   // Selected Items for Batch Label Printing
