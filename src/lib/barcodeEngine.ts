@@ -1,3 +1,5 @@
+import JsBarcode from 'jsbarcode';
+
 /**
  * GOLDEN STANDARD BARCODE PRESET (42.5 mm x 25.0 mm)
  * Technical Reference Specs (barcode_system_technical_reference.md)
