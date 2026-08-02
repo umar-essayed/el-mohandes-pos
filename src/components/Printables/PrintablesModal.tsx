@@ -1,33 +1,133 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { useApp } from '../../context/AppContext';
 import { Printer, X, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { DEFAULT_BARCODE_CONFIG } from '../../lib/barcodeEngine';
-import { buildMultiLabelZPL, fetchLabelaryPDF, fetchLabelPreviewDataUrl } from '../../lib/labelaryBarcodeEngine';
+import { generateZPLCode, fetchLabelaryPNG } from '../../lib/labelaryBarcodeEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BARCODE LABELS COMPONENT
-// Fetches PDF from Labelary API, opens in hidden iframe, prints directly.
-// Zero HTML @media print tricks needed.
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+interface FlatLabel {
+  key: string;
+  item: any;
+  zpl: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRINT PORTAL — mounted directly on document.body
+// Uses @page CSS so the browser knows the exact paper size (50.8mm × 25.4mm)
+// No PDF, no new window, no wrong paper size issues.
+// ─────────────────────────────────────────────────────────────────────────────
+const BarcodePrintPortal: React.FC<{
+  labelUrls: string[];     // object URLs of PNG images, one per label copy
+  onPrint: () => void;     // called after window.print()
+}> = ({ labelUrls, onPrint }) => {
+  // 2×1 inch = 50.8mm × 25.4mm at 8dpmm (exact Labelary output size)
+  const W = '50.8mm';
+  const H = '25.4mm';
+
+  return ReactDOM.createPortal(
+    <div id="barcode-print-portal">
+      <style>{`
+        @media screen {
+          #barcode-print-portal { display: none !important; }
+        }
+        @media print {
+          @page {
+            size: ${W} ${H};
+            margin: 0mm !important;
+          }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: ${W} !important;
+            background: white !important;
+          }
+          body > *:not(#barcode-print-portal) {
+            display: none !important;
+          }
+          #barcode-print-portal {
+            display: block !important;
+            width: ${W} !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
+          .bpp-label {
+            display: block !important;
+            width: ${W} !important;
+            height: ${H} !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          .bpp-label:last-child {
+            page-break-after: avoid !important;
+            break-after: avoid !important;
+          }
+          .bpp-label img {
+            display: block !important;
+            width: ${W} !important;
+            height: ${H} !important;
+            object-fit: fill !important;
+            image-rendering: crisp-edges !important;
+          }
+        }
+      `}</style>
+      {labelUrls.map((url, i) => (
+        <div key={i} className="bpp-label">
+          <img src={url} alt={`label-${i}`} />
+        </div>
+      ))}
+    </div>,
+    document.body
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BARCODE LABELS PRINTER (inside modal)
 // ─────────────────────────────────────────────────────────────────────────────
 const BarcodeLabelsPrinter: React.FC<{
   data: any;
   storeSettings: any;
 }> = ({ data, storeSettings }) => {
-  const config  = data.config || DEFAULT_BARCODE_CONFIG;
-  const items   = data.items || [];
+  const config = data.config || DEFAULT_BARCODE_CONFIG;
+  const items  = data.items  || [];
 
-  type Status = 'idle' | 'loading' | 'ready' | 'printing' | 'error';
-  const [status, setStatus]     = useState<Status>('idle');
-  const [errorMsg, setErrorMsg] = useState('');
-  const [pdfUrl, setPdfUrl]     = useState<string | null>(null);
-  const [previews, setPreviews] = useState<Record<string, string>>({});
-  const iframeRef               = useRef<HTMLIFrameElement>(null);
-  const prevUrlRef              = useRef<string | null>(null);
-  const prevPngRefs             = useRef<string[]>([]);
+  type Status = 'loading' | 'ready' | 'printing' | 'error';
+  const [status,    setStatus]    = useState<Status>('loading');
+  const [errorMsg,  setErrorMsg]  = useState('');
+  // One URL per label COPY (e.g. 3 copies = 3 entries)
+  const [labelUrls, setLabelUrls] = useState<string[]>([]);
+  // For screen preview: one URL per unique item
+  const [previews,  setPreviews]  = useState<Record<number, string>>({});
+  const urlsRef = useRef<string[]>([]);
 
-  const totalLabels = items.reduce((s: number, it: any) => s + (it.qty || 1), 0);
+  // Build flat list: one entry per copy
+  const flatLabels: FlatLabel[] = items.flatMap((item: any, idx: number) => {
+    const shopName    = config?.customStoreName || storeSettings?.storeName || 'المهندس للاتصالات';
+    const productName = (item.title || item.name || 'منتج').substring(0, 30);
+    const barcodeVal  = String(item.barcode || item.id || '0000000000');
+    const price       = item.salePrice ?? item.price ?? 0;
+    const zpl = generateZPLCode(
+      { shopName, productName, barcodeValue: barcodeVal, price: `EGP ${price}` },
+      config
+    );
+    return Array.from({ length: item.qty || 1 }, (_, q) => ({
+      key: `${idx}-${q}`,
+      item,
+      zpl,
+    }));
+  });
 
-  // Stringify config to detect real changes
+  const totalLabels = flatLabels.length;
+
+  // Stringify config to detect changes
   const configKey = JSON.stringify(config);
 
   useEffect(() => {
@@ -35,141 +135,143 @@ const BarcodeLabelsPrinter: React.FC<{
     let cancelled = false;
 
     setStatus('loading');
+    setLabelUrls([]);
     setPreviews({});
 
-    // Revoke old object URLs
-    if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
-    prevPngRefs.current.forEach(u => URL.revokeObjectURL(u));
-    prevPngRefs.current = [];
+    // Revoke old URLs
+    urlsRef.current.forEach(u => URL.revokeObjectURL(u));
+    urlsRef.current = [];
 
-    const multiZpl = buildMultiLabelZPL(
-      items.map((item: any) => ({ item, qty: item.qty || 1 })),
-      config,
-      storeSettings
-    );
+    const allUrls: string[] = new Array(flatLabels.length).fill('');
+    let loadedCount = 0;
 
-    // Fetch full PDF
-    fetchLabelaryPDF(multiZpl)
-      .then(blob => {
-        if (cancelled) return;
-        const url = URL.createObjectURL(blob);
-        prevUrlRef.current = url;
-        setPdfUrl(url);
+    const checkDone = () => {
+      loadedCount++;
+      if (loadedCount >= flatLabels.length && !cancelled) {
+        urlsRef.current = allUrls.filter(Boolean);
+        setLabelUrls([...allUrls]);
         setStatus('ready');
-      })
-      .catch(err => {
-        if (cancelled) return;
-        console.error('Labelary PDF error:', err);
-        setErrorMsg(`فشل الاتصال بـ Labelary API: ${err.message}`);
-        setStatus('error');
-      });
+      }
+    };
 
-    // Fetch preview PNG per unique item
+    // Fetch PNG for every copy
+    flatLabels.forEach(({ zpl }, i) => {
+      fetchLabelaryPNG(zpl)
+        .then(blob => {
+          if (cancelled) return;
+          const url = URL.createObjectURL(blob);
+          allUrls[i] = url;
+          checkDone();
+        })
+        .catch(err => {
+          if (cancelled) return;
+          console.error(`Label ${i} fetch failed:`, err);
+          allUrls[i] = '';
+          checkDone();
+        });
+    });
+
+    // Fetch one preview PNG per unique item (not per copy)
     items.forEach((item: any, idx: number) => {
-      fetchLabelPreviewDataUrl(item, config, storeSettings)
-        .then(url => {
-          if (cancelled) { URL.revokeObjectURL(url); return; }
-          prevPngRefs.current.push(url);
+      const shopName    = config?.customStoreName || storeSettings?.storeName || 'المهندس للاتصالات';
+      const productName = (item.title || item.name || 'منتج').substring(0, 30);
+      const barcodeVal  = String(item.barcode || item.id || '0000000000');
+      const price       = item.salePrice ?? item.price ?? 0;
+      const zpl = generateZPLCode(
+        { shopName, productName, barcodeValue: barcodeVal, price: `EGP ${price}` },
+        config
+      );
+      fetchLabelaryPNG(zpl)
+        .then(blob => {
+          if (cancelled) return;
+          const url = URL.createObjectURL(blob);
           setPreviews(prev => ({ ...prev, [idx]: url }));
         })
-        .catch(err => console.warn('Preview PNG failed:', err));
+        .catch(() => {});
     });
 
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configKey]);
 
-  const handlePrint = () => {
-    if (!pdfUrl) return;
+  const handlePrint = useCallback(() => {
+    if (status !== 'ready' || labelUrls.length === 0) return;
     setStatus('printing');
-
-    const win = window.open(pdfUrl, '_blank', 'width=900,height=700,toolbar=0,menubar=0');
-    if (win) {
-      // Try onload first
-      win.addEventListener('load', () => {
-        setTimeout(() => { try { win.print(); } catch (_) {} setStatus('ready'); }, 400);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+        setTimeout(() => setStatus('ready'), 500);
       });
-      // Always-fire fallback
-      setTimeout(() => { try { win.print(); } catch (_) {} setStatus('ready'); }, 1800);
-    } else {
-      // Popup blocked → iframe fallback
-      const iframe = iframeRef.current;
-      if (iframe) {
-        iframe.onload = () => setTimeout(() => { iframe.contentWindow?.print(); setStatus('ready'); }, 300);
-        iframe.src = pdfUrl;
-      }
-    }
-  };
+    });
+  }, [status, labelUrls]);
 
-  const widthMm  = config.widthMm  || 42.5;
-  const heightMm = config.heightMm || 25.0;
+  const readyCount = labelUrls.filter(Boolean).length;
 
   return (
     <div style={{ color: '#000' }}>
-      {/* Status Banner */}
+      {/* Status banner */}
       <div style={{
-        background: status === 'error' ? '#fef2f2' : status === 'ready' ? '#f0fdf4' : '#eff6ff',
-        border: `1px solid ${status === 'error' ? '#fca5a5' : status === 'ready' ? '#86efac' : '#93c5fd'}`,
+        background: status === 'error' ? '#fef2f2' : status === 'ready' || status === 'printing' ? '#f0fdf4' : '#eff6ff',
+        border: `1px solid ${status === 'error' ? '#fca5a5' : status === 'ready' || status === 'printing' ? '#86efac' : '#93c5fd'}`,
         borderRadius: 8,
-        padding: '0.75rem 1rem',
-        marginBottom: '1rem',
+        padding: '0.65rem 1rem',
+        marginBottom: '0.85rem',
         display: 'flex',
         alignItems: 'center',
         gap: '0.5rem',
-        fontSize: '0.85rem',
+        fontSize: '0.82rem',
         fontWeight: 600,
       }}>
-        {status === 'loading' && <><Loader2 size={16} className="spin" style={{ flexShrink: 0 }} /><span>جاري إنشاء الملصقات عبر Labelary API ({totalLabels} ملصق)...</span></>}
-        {status === 'ready'   && <><CheckCircle size={16} color="#16a34a" style={{ flexShrink: 0 }} /><span>جاهز! PDF تم توليده بنجاح من Labelary API ({totalLabels} ملصق)</span></>}
-        {status === 'printing' && <><Loader2 size={16} className="spin" style={{ flexShrink: 0 }} /><span>جاري فتح PDF للطباعة...</span></>}
-        {status === 'error'   && <><AlertCircle size={16} color="#dc2626" style={{ flexShrink: 0 }} /><span>{errorMsg}</span></>}
+        {status === 'loading'  && <><Loader2 size={15} className="spin" style={{ flexShrink: 0, animation: 'spin 1s linear infinite' }} /><span>جاري توليد {totalLabels} ملصق عبر Labelary API… ({readyCount}/{totalLabels})</span></>}
+        {status === 'ready'    && <><CheckCircle size={15} color="#16a34a" style={{ flexShrink: 0 }} /><span>✅ جاهز — {totalLabels} ملصق (50.8mm × 25.4mm) بالظبط على ورق الليبل</span></>}
+        {status === 'printing' && <><Loader2 size={15} style={{ flexShrink: 0, animation: 'spin 1s linear infinite' }} /><span>جاري الطباعة…</span></>}
+        {status === 'error'    && <><AlertCircle size={15} color="#dc2626" style={{ flexShrink: 0 }} /><span>{errorMsg}</span></>}
       </div>
 
-      {/* Print Button (big, prominent) */}
+      {/* Print button */}
       {(status === 'ready' || status === 'printing') && (
         <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
           <button
             className="btn btn-primary"
             onClick={handlePrint}
             disabled={status === 'printing'}
-            style={{ padding: '0.6rem 2rem', fontSize: '1rem', fontWeight: 800, borderRadius: 8 }}
+            style={{ padding: '0.55rem 1.8rem', fontSize: '0.95rem', fontWeight: 800, borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}
           >
-            {status === 'printing' ? '⏳ جاري الطباعة...' : `🖨️ طباعة ${totalLabels} ملصق (PDF)`}
+            <Printer size={16} />
+            {status === 'printing' ? 'جاري الطباعة…' : `طباعة ${totalLabels} ملصق 🖨️`}
           </button>
+          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: 4 }}>
+            حجم الورق: 50.8mm × 25.4mm (2×1 inch) — يُطبع بدون تدخل
+          </div>
         </div>
       )}
 
-      {/* Preview Grid */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+      {/* Screen preview grid (one card per unique item) */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
         {items.map((item: any, idx: number) => (
-          <div key={idx}>
-            {/* Label preview */}
+          <div key={idx} style={{ textAlign: 'center' }}>
             <div style={{
-              width: `${widthMm}mm`,
-              height: `${heightMm}mm`,
+              width: '50.8mm',
+              height: '25.4mm',
               background: '#fff',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+              boxShadow: '0 3px 12px rgba(0,0,0,0.3)',
               borderRadius: 3,
               overflow: 'hidden',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              margin: '0 auto',
             }}>
               {previews[idx] ? (
-                <img
-                  src={previews[idx]}
-                  alt={item.title}
-                  style={{ width: '100%', height: '100%', objectFit: 'fill' }}
-                />
+                <img src={previews[idx]} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'fill' }} />
               ) : (
-                <div style={{ fontSize: 10, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Loader2 size={12} className="spin" /> تحميل...
-                </div>
+                <span style={{ fontSize: 9, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> تحميل…
+                </span>
               )}
             </div>
-            {/* Qty badge */}
             {(item.qty || 1) > 1 && (
-              <div style={{ textAlign: 'center', marginTop: 4, fontSize: 11, color: '#fff', background: '#6366f1', borderRadius: 4, padding: '2px 6px', display: 'inline-block' }}>
+              <div style={{ fontSize: 10, color: '#e2e8f0', marginTop: 3, background: '#6366f1', borderRadius: 4, padding: '1px 6px', display: 'inline-block' }}>
                 × {item.qty} نسخة
               </div>
             )}
@@ -177,12 +279,12 @@ const BarcodeLabelsPrinter: React.FC<{
         ))}
       </div>
 
-      {/* Hidden iframe fallback for popup-blocked browsers */}
-      <iframe
-        ref={iframeRef}
-        style={{ display: 'none', width: 0, height: 0, border: 'none' }}
-        title="barcode-pdf-print"
-      />
+      {/* Print portal — hidden on screen, shown only during window.print() */}
+      {labelUrls.length > 0 && (
+        <BarcodePrintPortal labelUrls={labelUrls} onPrint={() => {}} />
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 };
@@ -208,7 +310,7 @@ export const PrintablesModal: React.FC = () => {
       <div
         className="modal-content"
         style={{
-          maxWidth: type === 'CONTRACT' ? 750 : type === 'BARCODE_LABELS' ? 520 : 420,
+          maxWidth: type === 'CONTRACT' ? 750 : type === 'BARCODE_LABELS' ? 540 : 420,
           padding: 0,
           overflow: 'hidden',
           borderRadius: 16,
@@ -219,30 +321,28 @@ export const PrintablesModal: React.FC = () => {
           className="no-print"
           style={{
             background: '#0f172a',
-            padding: '1rem',
+            padding: '0.9rem 1rem',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             borderBottom: '1px solid var(--border-color)',
           }}
         >
-          <span style={{ fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.95rem' }}>
-            <Printer size={18} />
-            {type === 'INVOICE'       && 'معاينة فاتورة البيع الحرارية (80mm)'}
-            {type === 'CONTRACT'      && 'معاينة عقد شراء / مبايعة هاتف مستعمل'}
-            {type === 'MAINTENANCE'   && 'معاينة إيصال استلام صيانة الزبون'}
-            {type === 'BARCODE_LABELS' && 'طباعة ملصقات الباركود عبر Labelary ZPL API'}
+          <span style={{ fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.9rem' }}>
+            <Printer size={17} />
+            {type === 'INVOICE'        && 'معاينة فاتورة البيع الحرارية (80mm)'}
+            {type === 'CONTRACT'       && 'معاينة عقد شراء / مبايعة هاتف مستعمل'}
+            {type === 'MAINTENANCE'    && 'معاينة إيصال استلام صيانة الزبون'}
+            {type === 'BARCODE_LABELS' && 'طباعة ملصقات الباركود — Labelary ZPL API'}
           </span>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            {/* For non-barcode types, show print button in header */}
             {type !== 'BARCODE_LABELS' && (
               <button
                 className="btn btn-primary"
-                style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem', fontWeight: 800 }}
+                style={{ padding: '0.38rem 0.9rem', fontSize: '0.82rem', fontWeight: 800 }}
                 onClick={() => window.print()}
               >
-                {type === 'CONTRACT'    ? 'طباعة العقد 🖨️'    :
-                 type === 'MAINTENANCE' ? 'طباعة الإيصال 🖨️' : 'طباعة الفاتورة 🖨️'}
+                {type === 'CONTRACT' ? 'طباعة العقد 🖨️' : type === 'MAINTENANCE' ? 'طباعة الإيصال 🖨️' : 'طباعة الفاتورة 🖨️'}
               </button>
             )}
             <button
@@ -257,10 +357,10 @@ export const PrintablesModal: React.FC = () => {
         {/* Body */}
         <div
           style={{
-            padding: type === 'BARCODE_LABELS' ? '1.25rem 1rem' : '1.2rem',
+            padding: type === 'BARCODE_LABELS' ? '1.1rem' : '1.2rem',
             maxHeight: '80vh',
             overflowY: 'auto',
-            background: type === 'BARCODE_LABELS' ? '#334155' : '#e2e8f0',
+            background: type === 'BARCODE_LABELS' ? '#1e293b' : '#e2e8f0',
             color: '#000',
           }}
         >
